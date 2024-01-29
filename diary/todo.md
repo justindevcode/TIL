@@ -2,6 +2,172 @@
 
 ---
 
+## 20240129  
+### 인프런 동시성문제 쓰레드풀  
+쓰레드 - 내 코드를 실행하는 묶음  
+같은 코드를 여러개 요청한다면 1번째 요청 - 1쓰레드가 묶어서 실행 / 2번째요청 - 2쓰레드가 묶어서 실행  
+이때 1,2쓰레드를 동시에 실행시킬 수 있는것  
+이런 이때 스프링 싱글톤 변수를 1,2가 동시에 접근해서 수정,조회를 하면 내가 저장한게 안보이고 다른사람이 저장한게 보이는 문재 생길 수 있음  
+  
+해결법 - 싱글톤을 사용하는 변수에 `ThreadLocal`을 사용해서 변수 선언및 저장  
+```java
+@Slf4j
+public class ThreadLocalService {
+private ThreadLocal<String> nameStore = new ThreadLocal<>();
+
+nameStore.set(name);
+log.info("조회 nameStore={}",nameStore.get());
+
+//값 제거: `ThreadLocal.remove()
+```
+이런식으로 `String`을 사용하더라도 `ThreadLocal`을 사용하면 쓰레드마다 별도의 저장소를 만들어서 값 사용가능  
+  
+다만 값제거는 쓰레드가 기본적으로 자동으로 코드실행완료후 죽으면 상관없는데 톰캣처럼 WAS사용한다면 비용때문에 쓰레드를 죽이지않고 살려서 반환후 재사용하기에  
+재사용할때 이전에 저장했던값이 남아있을 수 있어서 코드실행이 끝나면 `ThreadLocal.remove()`이거 꼭 사용해서 비워주기  
+
+### 인프런 템플릿 메서드 패턴  
+로그 남기기 코드 보면 핵심 `orderService.orderItem(itemId);`을 가운데 두고 로그남기기코드가 try catch문으로 위아래로 감싸고있음 너무 지저분  
+그래서 템플릿 메더스패턴 사용해보는데 이는 추상클레스로 로그남기기코드 쭉 작성해두고 그때그때 바뀌는 핵심코드 `call()` 같은 함수로 선언해두고  
+상속받으면서 `call`함수 구현하면서 그 안에다가 `orderService.orderItem(itemId);` 이거 넣는 방식  
+```java
+@Slf4j
+public class SubClassLogic2 extends AbstractTemplate {
+@Override
+protected void call() {
+log.info("비즈니스 로직2 실행");
+}
+}
+```
+이런식으로 `AbstractTemplate`여기안에 항상똑같은 로그코드 try catch문 들어있음  
+다만 이 방식은 상속의 문제를 그대로 가짐, `extends AbstractTemplate`이렇게 자식 부모 관계까 되면 너무 강력하게 연결되서 `AbstractTemplate`이쪽 부모쪽에서 새로운 함수 정의 하면 자식코드 모두 수정해야하고 더불어서 이 모양애서는 `SubClassLogic2`이 자식 클레스가 부모쪽에서 선언된 함수 사용하는게 없음 구실만 부모자식에 단점만 있는꼴  
+
+### 인프런 전략패턴  
+변하지 않는 부분을 그냥 클레스로 박아두고 바뀌는 부분의 `coll()`을 인터페이스로 생성에서 변하지않는 클레스에서 인터페이스 받아서 넣어두고  
+사용자는 인터페이스를 구현하면서 만드는 패턴  
+*변하지않는 부분*
+```java
+public class ContextV1 {
+private Strategy strategy;
+public ContextV1(Strategy strategy) {
+this.strategy = strategy;
+}
+public void execute() {
+long startTime = System.currentTimeMillis();
+//비즈니스 로직 실행
+strategy.call(); //위임
+//비즈니스 로직 종료
+long endTime = System.currentTimeMillis();
+long resultTime = endTime - startTime;
+log.info("resultTime={}", resultTime);
+}
+}
+```
+*인터페이스*
+```java
+public interface Strategy {
+void call();
+}
+```
+*인터페이스 구현*  
+```java
+public class StrategyLogic1 implements Strategy {
+@Override
+public void call() {
+log.info("비즈니스 로직1 실행");
+}
+}
+```
+*실제사용*
+```java
+void strategyV1() {
+Strategy strategyLogic1 = new StrategyLogic1();
+ContextV1 context1 = new ContextV1(strategyLogic1);
+context1.execute();
+Strategy strategyLogic2 = new StrategyLogic2();
+ContextV1 context2 = new ContextV1(strategyLogic2);
+context2.execute();
+}
+```
+  
+변하지않는 부분에서 의존관계를 `execute`의 매개변수로 받아서 사용할 수도있음 같은 패턴(의도가 같기때문에)  
+의도는 상속의 문제를 위임으로(인터페이스)로 해결 인터페이스만 문제없으면 `ContextV1`이 변경되어도 다른 함수쪽에서 변경할것 없음  
+알고리즘 제품군을 정의하고 각각을 캡슐화하여 상호 교환 가능하게 만들자. 전략을 사용하면 알고리즘을 사용하는 클라이언트와 독립적으로 알고리즘을 변경할 수 있다.
+
+### 템플릿 콜백 패턴  
+이는 전략패턴과 똑같은데 전략패턴중 변하지않는 부분에서 의존관계를 `execute`의 매개변수로 받아서 사용할 수도있는 패턴을 특히 스프링에서만 템플릿 콜백패턴이라고 한다.  
+이는 `JdbcTemplate` , `RestTemplate` , `TransactionTemplate` , `RedisTemplate`등으로 부르는 것들이 템플릿콜백 패턴으로 이루어져 있기때문이다.  
+
+별거는 없다. 변하지않는 부분의 클레스명이 `TimeLogTemplate`이런식으로 템플릿이 붙고 변하는부분의 인터페이스명이 `Callback`으로 되어있다.  
+
+```java
+public class TraceTemplate {
+private final LogTrace trace;
+public TraceTemplate(LogTrace trace) {
+this.trace = trace;
+}
+public <T> T execute(String message, TraceCallback<T> callback) {
+TraceStatus status = null;
+try {
+status = trace.begin(message);
+//로직 호출
+T result = callback.call();
+trace.end(status);
+return result;
+} catch (Exception e) {
+trace.exception(status, e);
+throw e;
+}
+}
+}
+```
+다만 명확하게 `public <T> T execute(String message, TraceCallback<T> callback)`이 함수에서 매개변수로 중간에 실행할 함수를 받아서 실행 - callback  
+이러한 방식에 람다까지 쓴다면 
+```java
+@Service
+public class OrderServiceV5 {
+private final OrderRepositoryV5 orderRepository;
+private final TraceTemplate template;
+public OrderServiceV5(OrderRepositoryV5 orderRepository, LogTrace trace) {
+this.orderRepository = orderRepository;
+this.template = new TraceTemplate(trace);
+}
+public void orderItem(String itemId) {
+template.execute("OrderService.orderItem()", () -> {
+orderRepository.save(itemId);
+return null;
+});
+}
+}
+```
+이런식으로 `template.execute("OrderService.orderItem()", () -> {orderRepository.save(itemId);` 정말 최소한으로 줄일 수 있다.  
+다만 최종적인 문제는 결국 `controller`든 `service`든 `repository`든 무조건 메인동작을 한줄이라도 수정하긴 해야한다는것 이것이 한계다.  
+
+### 인프런 프록시의 이해  
+
+클라이언트가 요청한 결과를 서버에 직접 요청하는 것이 아니라 어떤 대리자를 통해서 대신 간접적으로 서버에  
+요청할 수 있다. 예를 들어서 내가 직접 마트에서 장을 볼 수도 있지만, 누군가에게 대신 장을 봐달라고 부탁할 수도 있다.  
+여기서 대신 장을 보는 **대리자를 영어로 프록시(Proxy)**라 한다.  
+  
+클라이언트 -> 프록시 -> 서버  
+이때 클라이언트 서버는 단순히 이용자, 서버개발자가 아니라 요청하는 클레스 - 응답하는 클레스의 관계에서도 적용된다.  
+  
+재미있는 점은 직접 호출과 다르게 간접 호출을 하면 대리자가 중간에서 여러가지 일을 할 수 있다는 점이다.  
+엄마에게 라면을 사달라고 부탁 했는데, 엄마는 그 라면은 이미 집에 있다고 할 수도 있다. 그러면 기대한 것 보다 더 빨리 라면을 먹을 수 있다. (접근 제어, 캐싱)  
+아버지께 자동차 주유를 부탁했는데, 아버지가 주유 뿐만 아니라 세차까지 하고 왔다. 클라이언트가 기대한 것 외에 세차라는 부가 기능까지 얻게 되었다. (부가 기능 추가)  
+프록시가 다른 프록시 요청가능 (프록시 체인)  
+  
+이 프록시의 핵심은 클라이언트가 프록시가 사용됐는지도 몰라야한다는것 = 인터페이스등을 사용해서 DI로 클라이언트는 인터페이스를 의존하고 실제 인스턴스는 프록시가 될수도 서버가 될수도있는 방식 사용하는것  
+
+프록시를 통해서 할 수 있는 일은 크게 2가지로 구분할 수 있다.  
+접근 제어-권한에 따른 접근 차단,캐싱,지연 로딩  
+부가 기능 추가-원래 서버가 제공하는 기능에 더해서 부가 기능을 수행한다.(예) 요청 값이나, 응답 값을 중간에 변형한다.,예) 실행 시간을 측정해서 추가 로그를 남긴다)  
+  
+둘다 프록시를 사용하는 방법이지만 GOF 디자인 패턴에서는 이 둘을 의도(intent)에 따라서 프록시 패턴과 데코레이터 패턴으로 구분한다.  
+프록시 패턴: 접근 제어가 목적  
+데코레이터 패턴: 새로운 기능 추가가 목적  
+
+---
+
 ## 20240125  
 ### 인프런 스프링  
 #### 트랜잭션 전파 실무예시  
