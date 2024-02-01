@@ -2,6 +2,211 @@
 
 ---
 
+## 20240201  
+### 인프런 리플렉션  
+지난번에 배운 프록시방식도 결국 문제는 controller, service, repository 이렇게 넘어갈때마다 프록시를 코드로 내가 생성해줘야한다. 이떄는 3번  
+사실 controller, service, repository 3개다 프록시 코드는 비슷한데 이를 묶을 수 있는 방법은 없을까.
+
+```java
+@Test
+void reflection0() {
+Hello target = new Hello();
+//공통 로직1 시작
+log.info("start");
+String result1 = target.callA(); //호출하는 메서드가 다름
+log.info("result={}", result1);
+//공통 로직1 종료
+//공통 로직2 시작
+log.info("start");
+String result2 = target.callB(); //호출하는 메서드가 다름
+log.info("result={}", result2);
+//공통 로직2 종료
+}
+```
+이런 코드 보면 모양이 정말 비슷하지만 함수 callA callB를 동적으로 바꾸기는 뭔가 힘들다 이때 이용할 수 있는 기술이 리플렉션  
+
+```java
+Class classHello = Class.forName("hello.proxy.jdkdynamic.ReflectionTest$Hello");
+Hello target = new Hello()
+//callA 메서드 정보
+Method methodCallA = classHello.getMethod("callA");
+Object result1 = methodCallA.invoke(target)
+```
+이런식으로 어떤위치의 어떤함수인지 냅다 적으면 그 실제 class 정보를 가져올 수 있고
+내부의 함수명을 String으로 적으면서 함수를 꺼낼 수 있다.  
+내가 실행할 class의 인스턴스만 만들어서 그함수 실행시켜줘 하면 실행가능 이것으로 동적으로 함수도 실행가능하다.  
+다만 String으로 적는것에서 보면 컴파일에러로 함수명 잘못적은거는 확인이 불가능하기에 실제서비스에서는 조심해야한다.  
+
+### JDK동적 프록시
+
+```java
+@Slf4j
+public class TimeInvocationHandler implements InvocationHandler {
+private final Object target;
+public TimeInvocationHandler(Object target) {
+this.target = target;
+}
+@Override
+public Object invoke(Object proxy, Method method, Object[] args) throws
+Throwable {
+log.info("TimeProxy 실행");
+long startTime = System.currentTimeMillis();
+Object result = method.invoke(target, args);
+long endTime = System.currentTimeMillis();
+long resultTime = endTime - startTime;
+log.info("TimeProxy 종료 resultTime={}", resultTime);
+return result;
+}
+}
+```
+리플렉션을 이용한 동적프록시 JDK버전이다.  
+지정된 인터페이스 만들어서 그것을 구현하며 동작가능한데 `invoke`에 대상 객체, 함수, 함수의 매개변수들등 이런거 정해진거 구현하며 함수사에이 실행할거 넣어주면 된다.  
+다만 JDK버전은 실재로직이 인터페이스로 구현되어있어야 가능하다는거같다.(이해 확실하지않음)  
+인터페이스를 생성해주면서 프록시를만들기때문에 그렇다.  
+
+### CGLIB  
+JDK CGLIB 보다 더 편한 기술이 있기때문에 이해만해도 좋다.  
+CGLIB 기술도 JDK와 비슷하긴하다  
+
+```java
+public interface MethodInterceptor extends Callback {
+Object intercept(Object obj, Method method, Object[] args, MethodProxy
+proxy) throws Throwable;
+}
+```
+이런걸 구현하면서 구현할 수 있는거같은데 얘는 실체를 상속받으면서 프록시를 생성해주기 때문에 이미 인퍼테이스 없이 구현된 기능도 프록시 가능하게 만들 수 있다. 다만 상속이기에 final로 되어있는 class, 함수등은 예외가 발생하는등의 문제가 있다.  
+  
+이렇게 인터페이스로 되어있으면 jdk로 그냥 class만 있으면 CGLIB로 만들어주면 좋지않을까? 해서 나오는것이 다음에 배울것  
+
+
+---
+
+### 프로그래머스 여행결로 DFS 답(내가푼거 아님 정답지)
+
+```java
+import java.util.*;
+
+class Solution {
+
+    static ArrayList<String> list = new ArrayList<>();
+    static boolean useTickets[];
+
+    public String[] solution(String[][] tickets) {
+        useTickets = new boolean[tickets.length];
+
+        dfs(0, "ICN", "ICN", tickets);
+
+        Collections.sort(list);
+
+        return list.get(0).split(" ");
+    }
+
+    static void dfs(int depth, String now, String path, String[][] tickets){
+        if (depth == tickets.length) {
+            list.add(path);
+            return;
+        }
+
+        for (int i = 0; i < useTickets.length; i++) {
+            if (!useTickets[i] && now.equals(tickets[i][0])) {
+                useTickets[i] = true;
+                dfs(depth+1, tickets[i][1], path + " " +tickets[i][1], tickets);
+                useTickets[i] = false;
+            }
+        }
+    }
+}
+```
+
+
+### 프로그래머스 게임 맵 최단거리 답(내가푼거 아님 정답지)
+
+```java
+import java.util.LinkedList;
+import java.util.Queue;
+
+public class Main {
+    public static void main(String[] args) {
+        int[][] maps = {{1,0,1,1,1},{1,0,1,0,1},{1,0,1,1,1},{1,1,1,0,1},{0,0,0,0,1}};
+        int[][] maps2 = {{1,0,1,1,1},{1,0,1,0,1},{1,0,1,1,1},{1,1,1,0,0},{0,0,0,0,1}};
+        Solution solution = new Solution();
+
+        System.out.println("최종결과" + solution.solution(maps));
+
+
+
+    }
+    static class Solution {
+        static int answer = -1;
+        static boolean[][] visited;
+        // 상 하 좌 우
+        static int[] mrow = {-1, 1, 0, 0};
+        static int[] mcol = {0, 0, -1, 1};
+
+
+        public int solution(int[][] maps) {
+            visited = new boolean[maps.length][maps[0].length];
+
+            bfs(0, 0, maps);
+
+            return answer;
+        }
+
+
+
+        public void bfs(int row, int col, int[][] maps) {
+            Queue<Node> q = new LinkedList<>();
+
+            q.add(new Node(0, 0, 1));
+            visited[0][0] = true;
+
+            while (!q.isEmpty()) {
+                Node cur = q.poll();
+
+
+                // System.out.printf("row=%d, col=%d, count = %d\n", cur.row, cur.col, cur.count);
+
+                if (cur.row == maps.length - 1 && cur.col == maps[0].length - 1) {
+                    answer = cur.count;
+                    // System.out.println("catch");
+                    return;
+                }
+                for (int i = 0; i < 4; i++) {
+                    int nextRow = cur.row + mrow[i];
+                    int nextCol = cur.col + mcol[i];
+
+                    if (canMove(nextRow, nextCol, maps)) {
+                        // System.out.printf("add row=%d, col=%d, count = %d\n", cur.row, cur.col, cur.count);
+                        visited[nextRow][nextCol] = true;
+                        q.add(new Node(nextRow, nextCol, cur.count + 1));
+                    }
+
+                }
+            }
+        }
+
+        class Node {
+            int row;
+            int col;
+            int count;
+
+            public Node(int row, int col, int count) {
+                this.row = row;
+                this.col = col;
+                this.count = count;
+            }
+        }
+
+        public boolean canMove(int row, int col, int[][] maps) {
+            return row >= 0 && row < visited.length && col >= 0 && col < visited[0].length
+                    && !visited[row][col] && maps[row][col] != 0;
+        }
+    }
+}
+```
+
+---
+
 ## 20240129  
 ### 인프런 동시성문제 쓰레드풀  
 쓰레드 - 내 코드를 실행하는 묶음  
