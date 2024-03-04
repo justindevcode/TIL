@@ -1,5 +1,49 @@
 # todo  
 
+## 202240304  
+### 프록시 팩토리  
+
+우리의 시스템로직에 앞뒤로 부가기능을 넣기위해서 프록시를 도입해었다. 다만 실제 class 가 있다면 CGLIB를 아용해서 조금 편하게 사용했고,  
+인터페이스가 존재한다면 JDK동적 프록시를 통해서 프록시를 도입했다.  
+이를 공통적으로 적용하기 위해서 프록시 팩토리라는것을 스프링은 도입했다.  
+
+쉽게 생각하면 JDK 동적프록시, CGLIB두개를 감싸는 로직을 만들어서 들어오는 target class가 어떤모양인지에 따라서 알아서 적용해준다.  
+
+```java
+@Slf4j
+public class TimeAdvice implements MethodInterceptor {
+ @Override
+ public Object invoke(MethodInvocation invocation) throws Throwable {
+ log.info("TimeProxy 실행");
+ long startTime = System.currentTimeMillis();
+ Object result = invocation.proceed();
+ long endTime = System.currentTimeMillis();
+ long resultTime = endTime - startTime;
+ log.info("TimeProxy 종료 resultTime={}ms", resultTime);
+ return result;
+ }
+}
+
+```
+`public class TimeAdvice implements MethodInterceptor` 이쪽에 로직 앞뒤로 적용하고픈 기능을 구현해주면되고 실제 기존기능은  
+` Object result = invocation.proceed();`이렇게만 써두면 된다.  
+
+```java
+void interfaceProxy() {
+ ServiceInterface target = new ServiceImpl();
+ ProxyFactory proxyFactory = new ProxyFactory(target);
+ proxyFactory.addAdvice(new TimeAdvice());
+ ServiceInterface proxy = (ServiceInterface) proxyFactory.getProxy();
+ proxy.save();
+```
+이런식으로 초기에 조합해주면 target형태에따라서 알아서 작동하게해준다.  
+
+기본적으로 프록시 팩토리 - 실제 class만 있으면 CGLIB, 인터페이스 있으면 JDK동적 프록시이다  
+근데 인터페이스 있어도 프록시 팩토리쪽에서 `proxyTargetClass = true` 한줄넣어주면 인터페이스 있어도 CGLIB사용으로 프록시 만들어준다.  
+실무에서 종종 등장하는 패턴이기에 주의  
+스프링부트에서는 `proxyTargetClass = true`이게 기본적용이기에 항상 CGLIB만 보던것이다.  
+
+
 ---
 
 ## 20240303
