@@ -1,5 +1,97 @@
 # todo  
 
+
+---
+
+## 20240305  
+### 프록시 팩토리 적용과 한계점  
+
+프록시 펙토리를 실제로 적용한다면  
+
+```java
+@Slf4j
+public class LogTraceAdvice implements MethodInterceptor {
+ private final LogTrace logTrace;
+ public LogTraceAdvice(LogTrace logTrace) {
+ this.logTrace = logTrace;
+ }
+ @Override
+ public Object invoke(MethodInvocation invocation) throws Throwable {
+ TraceStatus status = null;
+ 
+ try {
+ Method method = invocation.getMethod();
+ String message = method.getDeclaringClass().getSimpleName() + "."
+ + method.getName() + "()";
+ status = logTrace.begin(message);
+ //로직 호출
+ Object result = invocation.proceed();
+ logTrace.end(status);
+ return result;
+ } catch (Exception e) {
+ logTrace.exception(status, e);
+ throw e;
+ }
+ }
+}
+```
+우리가 사용할 어드바이스를 코드로 작성해준후에  
+
+```java
+@Slf4j
+@Configuration
+public class ProxyFactoryConfigV2 {
+ @Bean
+ public OrderControllerV2 orderControllerV2(LogTrace logTrace) {
+ OrderControllerV2 orderController = new
+OrderControllerV2(orderServiceV2(logTrace));
+ ProxyFactory factory = new ProxyFactory(orderController);
+ factory.addAdvisor(getAdvisor(logTrace));
+ OrderControllerV2 proxy = (OrderControllerV2) factory.getProxy();
+ log.info("ProxyFactory proxy={}, target={}", proxy.getClass(), 
+orderController.getClass());
+ return proxy;
+ }
+ @Bean
+ public OrderServiceV2 orderServiceV2(LogTrace logTrace) {
+ OrderServiceV2 orderService = new
+OrderServiceV2(orderRepositoryV2(logTrace));
+ ProxyFactory factory = new ProxyFactory(orderService);
+ factory.addAdvisor(getAdvisor(logTrace));
+ OrderServiceV2 proxy = (OrderServiceV2) factory.getProxy();
+ log.info("ProxyFactory proxy={}, target={}", proxy.getClass(), 
+orderService.getClass());
+ return proxy;
+ }
+ @Bean
+ public OrderRepositoryV2 orderRepositoryV2(LogTrace logTrace) {
+ OrderRepositoryV2 orderRepository = new OrderRepositoryV2();
+ ProxyFactory factory = new ProxyFactory(orderRepository);
+ factory.addAdvisor(getAdvisor(logTrace));
+ OrderRepositoryV2 proxy = (OrderRepositoryV2) factory.getProxy();
+ log.info("ProxyFactory proxy={}, target={}", proxy.getClass(), 
+orderRepository.getClass());
+ return proxy;
+ }
+ private Advisor getAdvisor(LogTrace logTrace) {
+ //pointcut
+ NameMatchMethodPointcut pointcut = new NameMatchMethodPointcut();
+ pointcut.setMappedNames("request*", "order*", "save*");
+ //advice
+ LogTraceAdvice advice = new LogTraceAdvice(logTrace);
+ //advisor = pointcut + advice
+ return new DefaultPointcutAdvisor(pointcut, advice);
+ }
+}
+```
+빈등록을 프록시를 반환하는 형태로 만들어주면 적용이 완료된다.  
+
+프록시팩토리를 통해서 우리는 넣고싶은 기능을 하나의 클레스에서 작성해준후에 DI를 조합하는 설정 class파일에서 조립만 해주면된다.  
+그러나 문제는 기존에 이러한 설정도 귀찮고 힘들어서 이런 설정없이 컴포넌트 스캔을 썼는데 다시 적어줘야하는 문제가 생기고, 빈이 많아질수록 결국 손으로 적어줘야하는 코드도 많아진다.  
+이를 해결하기위해 빈 후처리기 라는것이 나오게된다.  
+
+---
+
 ## 202240304  
 ### 프록시 팩토리  
 
