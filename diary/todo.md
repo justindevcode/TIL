@@ -135,6 +135,64 @@ void interfaceProxy() {
 실무에서 종종 등장하는 패턴이기에 주의  
 스프링부트에서는 `proxyTargetClass = true`이게 기본적용이기에 항상 CGLIB만 보던것이다.  
 
+### 포인트컷, 어드바이스, 어드바이저  
+이런 프록시 패턴을 보면 역할을 나눌 수 있다.  
+어떠한 target들에게 적용할것인가 = 포인트컷  
+어떠한 기능들을 적용할것인가 = 어드바이스  
+목표 target하나 + 적용기능하나 = 어드바이저  
+
+```java
+
+@Test
+@DisplayName("스프링이 제공하는 포인트컷")
+void advisorTest3() {
+ ServiceImpl target = new ServiceImpl();
+ ProxyFactory proxyFactory = new ProxyFactory(target);
+ NameMatchMethodPointcut pointcut = new NameMatchMethodPointcut();
+ pointcut.setMappedNames("save");
+ DefaultPointcutAdvisor advisor = new DefaultPointcutAdvisor(pointcut, new
+TimeAdvice());
+ proxyFactory.addAdvisor(advisor);
+ ServiceInterface proxy = (ServiceInterface) proxyFactory.getProxy();
+ proxy.save();
+ proxy.find();
+}
+```
+위쪽에서 배운 프록시펙토리에 
+```
+NameMatchMethodPointcut pointcut = new NameMatchMethodPointcut();
+ pointcut.setMappedNames("save");
+ DefaultPointcutAdvisor advisor = new DefaultPointcutAdvisor(pointcut, new
+TimeAdvice());
+```
+이부분이 추가된느낌이다.  
+위에서 배운 그냥 어드바이스를 넣는게 포인트컷을 allTrue하는 느낌으로 자동적용해준다.  
+
+
+#### 여러 어드바이저 적용
+```java
+@Test
+@DisplayName("하나의 프록시, 여러 어드바이저")
+void multiAdvisorTest2() {
+ //proxy -> advisor2 -> advisor1 -> target
+ DefaultPointcutAdvisor advisor2 = new DefaultPointcutAdvisor(Pointcut.TRUE, 
+new Advice2());
+ DefaultPointcutAdvisor advisor1 = new DefaultPointcutAdvisor(Pointcut.TRUE, 
+new Advice1());
+ ServiceInterface target = new ServiceImpl();
+ ProxyFactory proxyFactory1 = new ProxyFactory(target);
+ proxyFactory1.addAdvisor(advisor2);
+ proxyFactory1.addAdvisor(advisor1);
+ ServiceInterface proxy = (ServiceInterface) proxyFactory1.getProxy();
+ //실행
+ proxy.save();
+}
+```
+
+`proxyFactory1.addAdvisor(advisor2);`사용해서 추가해주면 등록된만큼 적용되고 실제 target을 부르게된다.  
+이것이 중요한 이유는 나중에 좀더 편하게 사용하면 `roxyFactory proxyFactory1 = new ProxyFactory(target);`이 프록시 펙토리가  
+`advisor`의 개수만큼 새로 `new`로 생성된다고 착각할 수 있는데 위와같이 하나의 프록시 펙토리헤서 여러개를 적용후 `target`을 부르는 형식으로 진행된다.  
+
 
 ---
 
