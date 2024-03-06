@@ -1,5 +1,94 @@
 # todo  
 
+---
+
+## 20240306  
+### 빈 후처리기  
+빈등록은 컴포넌트 스캔이나 설정파일을 통해서 등록할 수 있다.  
+이전에는 설정파일을 만들면서 스프링빈에 등록해줄때 내가 프록시를 만들어서 연결해준후에 프록시를 등록해줬는데 너무 코드가 복잡했다.  
+
+이에 스프링은 빈 후처리기라는것을 지원한다.  
+빈이 등록될때는 설정파일이나 컴포넌트 스캔을 통해 1. 객체를 생성하고, 2 객체를 빈 저장소에 등록한다.  
+이때 생성이 완료된것들을 하나하나 확인해가면서 조작,변경할것을 수정후에 빈 저장소에 등록할 수 있는 기능이다.  
+
+빈 후처리기 간단코드
+```java
+public class BeanPostProcessorTest {
+ @Test
+ void postProcessor() {
+ ApplicationContext applicationContext = new
+AnnotationConfigApplicationContext(BeanPostProcessorConfig.class);
+ //beanA 이름으로 B 객체가 빈으로 등록된다.
+ B b = applicationContext.getBean("beanA", B.class);
+ b.helloB();
+ //A는 빈으로 등록되지 않는다.
+ Assertions.assertThrows(NoSuchBeanDefinitionException.class,
+ () -> applicationContext.getBean(A.class));
+ }
+ @Slf4j
+ @Configuration
+ static class BeanPostProcessorConfig {
+ @Bean(name = "beanA")
+ public A a() {
+ return new A();
+ }
+ @Bean
+ public AToBPostProcessor helloPostProcessor() {
+ return new AToBPostProcessor();
+ }
+ }
+ @Slf4j
+ static class A {
+ public void helloA() {
+ log.info("hello A");
+ }
+ }
+ @Slf4j
+ static class B {
+ public void helloB() {
+ log.info("hello B");
+ }
+ }
+ @Slf4j
+ static class AToBPostProcessor implements BeanPostProcessor {
+ @Override
+ public Object postProcessAfterInitialization(Object bean, String
+beanName) throws BeansException {
+ log.info("beanName={} bean={}", beanName, bean);
+ if (bean instanceof A) {
+ return new B();
+ }
+ return bean;
+ }
+ }
+}
+```
+`ApplicationContext applicationContext = new AnnotationConfigApplicationContext(BeanPostProcessorConfig.class);` 수동으로 빈 컨테이너에 설정파일을 집어넣는 코드이다.  
+
+` static class AToBPostProcessor implements BeanPostProcessor` 이 인터페이스를 구현하면서 빈 후처리기를 사용할 수 있다.  
+`public Object postProcessAfterInitialization(Object bean, StringbeanName)`인터페이스 함수중에 이를 구현하면 되는데 `bean`에 원래, 실제로 등록될 녀석이 들어있다. 그대로 `return bean`해버리면 기존의 등록 그대로 작동하는데 이 매개변수를 확인해서 조작해서 바꾸고싶은 녀석을 `return`해주면 그녀석이 빈으로 등록되게된다.  
+
+#### 실사용  
+
+실사용에서는 
+
+`public class PackageLogTraceProxyPostProcessor implements BeanPostProcessor`이 class에다가 그냥 
+`public Object postProcessAfterInitialization(Object bean, StringbeanName)`에  
+```java
+if (!packageName.startsWith(basePackage)) {
+ return bean;
+ }
+ //프록시 대상이면 프록시를 만들어서 반환
+ ProxyFactory proxyFactory = new ProxyFactory(bean);
+ proxyFactory.addAdvisor(advisor);
+ Object proxy = proxyFactory.getProxy();
+ return proxy;
+ }
+```
+이런 코드 넣어서 만들어준후에 `PackageLogTraceProxyPostProcessor`얘를 bean으로 딱하나만 등록해주면 컴포넌트 스캔녀석들은 그냥 자동으로 되고 판별에 의해 필요한것들은 프록시 개체를 만들어서 그게 빈으로 등록되게 만들 수 있다.  
+(코드참조)  
+
+
 
 ---
 
