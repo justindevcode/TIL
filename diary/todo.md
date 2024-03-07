@@ -181,6 +181,110 @@ orderRepository.getClass());
 
 ---
 
+### 코테 프로그래머스 전화번호목록 해시  
+
+배운것  
+* `Arrays.sort(phone_book);`정렬방식
+* `phone_book[j].startsWith(phone_book[i])` startsWith
+* 해쉬효율
+  
+전화번호부에 적힌 전화번호 중, 한 번호가 다른 번호의 접두어인 경우가 있는지 확인하려 합니다. 전화번호가 다음과 같을 경우, 구조대 전화번호는 영석이의 전화번호의 접두사입니다.  
+구조대 : 119 박준영 : 97 674 223 지영석 : 11 9552 4421  
+전화번호부에 적힌 전화번호를 담은 배열 phone_book 이 solution 함수의 매개변수로 주어질 때, 어떤 번호가 다른 번호의 접두어인 경우가 있으면 false를 그렇지 않으면 true를 return 하도록 solution 함수를 작성해주세요.  
+
+#### 혼자시도  
+```java
+import java.util.Arrays;
+
+public class Main {
+
+	public static String[] phone_book1 = {"119", "97674223", "1195524421"};
+	public static String[] phone_book2 = {"123","456","789"};
+	public static String[] phone_book3 = {"1","34","132"};
+
+	public static void main(String[] args) {
+		Solution solution = new Solution();
+		System.out.println(solution.solution(phone_book3));
+	}
+
+	public static class Solution {
+
+		public boolean solution(String[] phone_book) {
+			Arrays.sort(phone_book);
+
+			boolean answer = true;
+			//test
+			System.out.println("길이순으로 정렬된 배열:");
+			for (String str : phone_book) {
+				System.out.println(str);
+			}
+
+			for (int i = 0; i < phone_book.length; i++) {
+				for (int j = i+1; j < phone_book.length; j++) {
+					if (phone_book[j].startsWith(phone_book[i])) {
+						answer = false;
+					}
+
+				}
+			}
+
+			return answer;
+		}
+
+	}
+
+}
+```
+좀 알아가면서 `startsWith`을 처음알았다. 대상 문자열이 특정 문자 또는 문자열로 시작하는지 체크하는 함수이다.  
+
+#### 속도개선
+```java
+Arrays.sort(phone_book);
+
+for(int i = 0; i < phone_book.length -1; i++) {
+ if (phone_book[i+1].startsWith(phone_book[i]))
+  return false;
+}
+```
+이식만 있어도된다. `Arrays.sort`가 숫자 오름차순 - 문자열길이오름차순으로 2조건에 정렬해주기에 예를들어
+`1, 34, 132`이런 배열이 있다면
+`1, 132, 34`순으로 정렬해준다. 그렇기에 정렬한번하고 내뒤의것만 확인하면되는것이다.  
+
+#### 해쉬이용
+```java
+import java.util.*;
+
+class Solution {
+    public boolean solution(String[] phone_book) {
+        Map<String, String> map = new HashMap<>();
+
+//값을 전부다 해쉬에 집어넣고
+        for (int i = 0; i < phone_book.length; i++) {
+            map.put(phone_book[i], phone_book[i]);
+        }
+        
+        for (int i = 0; i < phone_book.length; i++) {
+//전화번호 하나하나를
+            for (int j = 1; j < phone_book[i].length(); j++) {
+// 12345 => 1,12,123,1234 이렇게 반복 잘라서 검증
+                String subString = phone_book[i].substring(0, j);
+
+//1,12,123이런 하나하나들이 map에 들어있는지 통째로 검증
+                if (map.containsKey(subString)) {
+                    return false;
+                }
+            }
+        }
+        
+        return true;
+    }
+}
+```
+이게 정말 더 효율적인가 직관적이지는 않지만 `map.containsKey(subString)`이것이 효율적이긴 한거같다.  
+
+
+---
+
 ## 202240304  
 ### 프록시 팩토리  
 
