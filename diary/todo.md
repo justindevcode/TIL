@@ -89,6 +89,80 @@ if (!packageName.startsWith(basePackage)) {
 (코드참조)  
 
 
+---
+
+### 프로그래머스 같은숫자는 싫어 스텍/큐  
+
+배운것
+* Deque
+* for문 제한사항 매 바퀴마다 초기화
+* 
+
+문제 설명  배열 arr가 주어집니다. 배열 arr의 각 원소는 숫자 0부터 9까지로 이루어져 있습니다. 이때, 배열 arr에서 연속적으로 나타나는 숫자는 하나만 남기고 전부 제거하려고 합니다. 단, 제거된 후 남은 수들을 반환할 때는 배열 arr의 원소들의 순서를 유지해야 합니다.  
+예를 들면, 1133011 이면 1301 을 return 합니다.  
+배열 arr에서 연속적으로 나타나는 숫자는 제거하고 남은 수들을 return 하는 solution 함수를 완성해 주세요.  
+제한사항 배열 arr의 크기 : 1,000,000 이하의 자연수 배열 arr의 원소의 크기 : 0보다 크거나 같고 9보다 작거나 같은 정수  
+
+내가풀기
+```java
+import java.util.*;
+
+public class Main {
+
+	public static int[] arr1 = {1, 1, 3, 3, 0, 1, 1};
+	public static int[] arr2 = {4, 4, 4, 3, 3};
+
+	public static void main(String[] args) {
+		Solution solution = new Solution();
+		for (int num : solution.solution(arr2)) {
+			System.out.println("result" + num);
+
+		}
+	}
+
+	public static class Solution {
+
+		public int[] solution(int[] arr) {
+			Deque<Integer> deque = new LinkedList<>();
+			Deque<Integer> dequeResult = new LinkedList<>();
+
+			for (int num : arr) {
+				deque.addFirst(num);
+			}
+			dequeResult.addFirst(deque.pollLast());
+
+			int size = deque.size();
+			for (int i = 0; i < size; i++) {
+
+				if (dequeResult.getFirst() == deque.getLast()) {
+					deque.pollLast();
+
+				} else {
+					dequeResult.addFirst(deque.pollLast());
+
+				}
+			}
+
+			// 세트를 다시 배열로 변환
+			int[] result = new int[dequeResult.size()];
+			int size2 = dequeResult.size();
+			for (int i = 0; i < size2; i++) {
+				result[i] = dequeResult.pollLast();
+			}
+
+			return result;
+		}
+
+	}
+
+}
+```
+파이썬에도 Deque가 있는데 자바에도 있나해서 찾아봤더니 있었다. 역시 편하다  
+쉬운문제인데 삽질한데 for문에 `i < size`이 제한사항을 `i < deque.size()`로 하니깐 첫바퀴의 숫자가 아니라 돌면서 데큐에서는 원소가 빠져나가며 size가 줄어드는데 그게 반영되서 이상하게 for문이 돌았다.  
+여기서 삽질을 하다니...  
+
+다른 정답을 보면 핵심 자체는 비슷하긴한데 처음 `int[]`를 받으면서 한번에 처리할 수 있을거같긴하다.  
+
 
 ---
 
