@@ -1,6 +1,36 @@
 # todo  
 
 
+## 20240307  
+### 스프링이 제공하는 빈 후처리기  
+스프링 라이브러리에 `spring-boot-starter-aop`을 추가하면 프록시 팩토리를 자동으로 `bean`으로 등록해주며 이전에는 프록시 팩토리를 `bean`으로 등록하면서 페키지 설정 이런거 좀 해줬는데 아에 할 필요가 없다.  
+
+생각해보면 어드바이저에는 포인트컷이 있어서 이걸 보고 찾아서 해당하는것만 등록해주면 되는것이다.  
+
+설정파일
+```java
+@Bean
+public Advisor advisor3(LogTrace logTrace) {
+ AspectJExpressionPointcut pointcut = new AspectJExpressionPointcut();
+ pointcut.setExpression("execution(* hello.proxy.app..*(..)) && !execution(* 
+hello.proxy.app..noLog(..))");
+ LogTraceAdvice advice = new LogTraceAdvice(logTrace);
+ //advisor = pointcut + advice
+ return new DefaultPointcutAdvisor(pointcut, advice);
+}
+
+```
+이렇게 하나만 등록해주면 된다. 포인트 컷에서 `"execution(* hello.proxy.app..*(..)) && !execution(* hello.proxy.app..noLog(..))")`  
+좀 특이한 수식을 사용했는데 페키지기반으로 `nolog`함수만 제외하고 어드바이스를 적용 시켜달라는 뜻이다. 이걸보고 그냥 적용 시켜준다.  
+
+중요한점은 여러 어드바이스를 적용해도 한 클레스에서는 프록시가 단 하나만 생성되며 포인트컷 확인작업이 2번 실행된다는것이다.  
+
+1. 모든 생성되는 `bean`을 모든 등록된 어드바이저의 포인트컷과 대조해서 단 하나의 함수라도 사용하면 일단 프록시 펙토리돌려서 프록시를 어드바이저 넣어 만든다. 없다면 그냥 실제 그녀석을 `bean`으로 등록
+2. 만약 한개 더 적용시켜야할 어드바이저가 있다면 이미 존재하는 프록시 팩토리에 어드바이저만 하나더 추가한다. (이것이 중요)  
+3. 이렇게 모든 `bean`이 완성되고나서 실제 함수가 실행될때 그 함수가 어드바이스를 적용해야하는 놈인지 아닌지 다시 포인트컷을 통해 확인후 적용한다.
+
+1,3번에서 포인트컷을 통한 확인작업이 2번 진행되며 2번으로 프록시 자체는 단 하나만 생성된다는것이 중요하다.  
+
 
 ---
 
