@@ -31,6 +31,64 @@ hello.proxy.app..noLog(..))");
 
 1,3번에서 포인트컷을 통한 확인작업이 2번 진행되며 2번으로 프록시 자체는 단 하나만 생성된다는것이 중요하다.  
 
+---
+
+### 프로그래머스 k번째수 정렬
+
+배운것
+* Arrays.copyOfRange 암기  
+* `numberList.stream().mapToInt(Integer::intValue).toArray();`스트림 익숙해지기
+
+배열 array의 i번째 숫자부터 j번째 숫자까지 자르고 정렬했을 때, k번째에 있는 수를 구하려 합니다.  
+예를 들어 array가 1, 5, 2, 6, 3, 7, 4  
+i = 2, j = 5, k = 3이라면  
+array의 2번째부터 5번째까지 자르면 5, 2, 6, 3입니다.  
+1에서 나온 배열을 정렬하면 2, 3, 5, 6입니다.  
+2에서 나온 배열의 3번째 숫자는 5입니다.  
+배열 array, i, j, k를 원소로 가진 2차원 배열 commands가 매개변수로 주어질 때, commands의 모든 원소에 대해 앞서 설명한 연산을 적용했을 때 나온 결과를 배열에 담아 return 하도록 solution 함수를 작성해주세요.  
+
+arr1(1, 5, 2, 6, 3, 7, 4) arr2((2, 5, 3), (4, 4, 1), (1, 7, 3)) 결과(5, 6, 3)  
+
+내가풀기  
+```java
+import java.util.*;
+
+public class Main {
+
+	public static int[] arr1 = {1, 5, 2, 6, 3, 7, 4};
+	public static int[][] arr2 = {{2, 5, 3}, {4, 4, 1}, {1, 7, 3}};
+
+	public static void main(String[] args) {
+		Solution solution = new Solution();
+		for (int num : solution.solution(arr1, arr2)) {
+			System.out.println("result" + num);
+
+		}
+	}
+
+	public static class Solution {
+
+		public int[] solution(int[] array, int[][] commands) {
+			ArrayList<Integer> numberList = new ArrayList<>();
+			for (int[] arr : commands) {
+				numberList.add(resultOne(array, arr));
+			}
+			int[] answer = numberList.stream().mapToInt(Integer::intValue).toArray();
+			return answer;
+		}
+
+		public int resultOne(int[] array, int[] command) {
+			int[] slicedArray = Arrays.copyOfRange(array, command[0]-1, command[1]);
+			Arrays.sort(slicedArray);
+			return slicedArray[command[2] - 1];
+		}
+
+	}
+
+}
+```
+다른정답을 봐도 이정도에서 정리하면 될거같다.  
+완전히 모르는건 아니였는데 `Arrays.copyOfRange`이거랑 스트림 사용법 검색없이 써야하니 자꾸 익숙해져야한다.  
 
 ---
 
