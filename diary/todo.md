@@ -91,6 +91,46 @@ public class Main {
 완전히 모르는건 아니였는데 `Arrays.copyOfRange`이거랑 스트림 사용법 검색없이 써야하니 자꾸 익숙해져야한다.  
 
 ---
+### 네컷아카이브 집에서 배포
+우분투 ISO다운
+버추얼박스 설치후 생성  
+언어한번바꿔야 터미널실행가능?  
+
+```
+우분투 로그인 계정 root권한 등록
+su -
+usermod -aG sudo 사용자명
+
+(다시로그인)
+su - 사용자명
+
+sudo apt-get update
+sudo apt-get install apt-transport-https ca-certificates curl gnupg-agent software-properties-common
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+sudo apt-get update
+
+sudo apt-get install docker-ce docker-ce-cli containerd.io
+sudo systemctl status docker
+
+도커 다운 하려면 도커 명령어 다시 root권한 등록
+su -
+sudo usermod -aG docker 사용자명
+su - 사용자명
+
+sudo docker pull witwint/filmarchive:20240306-1 이런식으로 걍 저장소이름으로 다운가능
+```
+
+이후에 저번처럼 run시키면 동작 잘됨
+
+#### 포트포워딩  
+1도커 실행할때 8000:8000연결
+2버츄얼박스 ip비워두고 8000연결하니 전부다 되는듯
+3노트북방화벽 네트워크 고급설정가니 인바운드설정에 그냥 TCP,UDP등록가능
+4공유기 똑같이 포트포워딩 도착지(노트북이사용하는 와이파이의 주소로)
+5모뎀 브릿지 설정으로 바꿈, 이거 바꾸니깐 외부주소 아에바뀜? 뭔가 내가 손못쓰는게 있나 저번에 그냥 여기서 포트포워딩하려니 안됨  
+
+---
 
 ## 20240306  
 ### 빈 후처리기  
