@@ -1,5 +1,63 @@
 # todo  
 
+---
+
+## 20240308  
+### @Aspect 프록시  
+이전까지는 우리가 포인트컷, 어드비아스를 만들어 어드바이저를 만들고 빈에 등록해서 사용했다. 이를 더 간편하게 만드는 방법이 있다.  
+
+@@Aspect사용
+```java
+@Slf4j
+@Aspect
+public class LogTraceAspect {
+ private final LogTrace logTrace;
+ public LogTraceAspect(LogTrace logTrace) {
+ this.logTrace = logTrace;
+ }
+ @Around("execution(* hello.proxy.app..*(..))")
+ public Object execute(ProceedingJoinPoint joinPoint) throws Throwable {
+ TraceStatus status = null;
+// log.info("target={}", joinPoint.getTarget()); //실제 호출 대상
+// log.info("getArgs={}", joinPoint.getArgs()); //전달인자
+// log.info("getSignature={}", joinPoint.getSignature()); //join point 시그
+니처
+ try {
+ String message = joinPoint.getSignature().toShortString();
+ status = logTrace.begin(message);
+ //로직 호출
+ Object result = joinPoint.proceed();
+ logTrace.end(status);
+ return result;
+ } catch (Exception e) {
+ logTrace.exception(status, e);
+ throw e;
+ }
+ }
+}
+```
+원래는 어드바이스를 만드는 곳이라고 생각하면 된다. 여기애 `@Aspect`붙여주고 어드바이스함수위에 `@Around`붙여주며 포인트컷에서 썼던 경로를 입력해준다.  
+이런식으로 작성하면 `@Around`통해 포인트컷 제작가능, 함수자체가 어드바이스 이므로 스프링이 `@Aspect`붙은 놈을 찾아서 각각 포인트컷, 어드바이스를 만든후, 어드바이저까지 알아서 만들어 줄 수 있다.  
+
+다만 위의 class를 bean으로 등록은 해줘야한다.  
+
+```java
+@Configuration
+@Import({AppV1Config.class, AppV2Config.class})
+public class AopConfig {
+ @Bean
+ public LogTraceAspect logTraceAspect(LogTrace logTrace) {
+ return new LogTraceAspect(logTrace);
+ }
+}
+```
+이렇게 하면 이전에 적용했던것들 포인트컷,어드바이스, 어드바이저를 직접 만들어서 아에 `bean`으로 넣어준것에서 프록시적용해야하는지 검증+  
+`@Aspect`붙은 놈을 통해서 스프링이 자동으로 생성해준 어드바이저도 이전과 똑같이 체크를 해줘서 필요한곳에 프록시를 사용할 수 있도록 해준다.  
+
+이런기술들이 스프링AOP의 기초 기반이라고 할 수 있으며 앞으로 AOP를 배워보자  
+
+---
+
 
 ## 20240307  
 ### 스프링이 제공하는 빈 후처리기  
