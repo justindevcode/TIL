@@ -59,6 +59,65 @@ public class AopConfig {
 ---
 
 
+### 프로그래머스 코테 최소직사각형
+
+배운것
+* `PriorityQueue<Integer> maxHeapL = new PriorityQueue<>(Comparator.reverseOrder());` 최대힙
+
+명함 지갑을 만드는 회사에서 지갑의 크기를 정하려고 합니다. 다양한 모양과 크기의 명함들을 모두 수납할 수 있으면서, 작아서 들고 다니기 편한 지갑을 만들어야 합니다. 이러한 요건을 만족하는 지갑을 만들기 위해 디자인팀은 모든 명함의 가로 길이와 세로 길이를 조사했습니다.  아래 표는 4가지 명함의 가로 길이와 세로 길이를 나타냅니다.  
+가장 긴 가로 길이와 세로 길이가 각각 80, 70이기 때문에 80(가로) x 70(세로) 크기의 지갑을 만들면 모든 명함들을 수납할 수 있습니다. 하지만 2번 명함을 가로로 눕혀 수납한다면 80(가로) x 50(세로) 크기의 지갑으로 모든 명함들을 수납할 수 있습니다. 이때의 지갑 크기는 4000(=80 x 50)입니다.  
+입력 {{60, 50}, {30, 70}, {60, 30}, {80, 40}} 출력 4000  
+
+내가푼것  
+```java
+import java.util.*;
+
+public class Main {
+
+	public static int[][] arr1 = {{60, 50}, {30, 70}, {60, 30}, {80, 40}};
+	public static int[][] arr2 = {{10, 7}, {12, 3}, {8, 15}, {14, 7}, {5, 15}};
+
+	public static void main(String[] args) {
+		Solution solution = new Solution();
+
+		System.out.println(solution.solution(arr1));
+
+	}
+
+	public static class Solution {
+
+		public int solution(int[][] sizes) {
+			PriorityQueue<Integer> maxHeapL = new PriorityQueue<>(Comparator.reverseOrder());
+			PriorityQueue<Integer> maxHeapC = new PriorityQueue<>(Comparator.reverseOrder());
+
+			for (int[] size : sizes) {
+				if (size[0] > size[1]) {
+					maxHeapC.add(size[0]);
+					maxHeapL.add(size[1]);
+				} else {
+					maxHeapC.add(size[1]);
+					maxHeapL.add(size[0]);
+				}
+			}
+			int answer = maxHeapL.peek() * maxHeapC.peek();
+			return answer;
+		}
+
+	}
+
+}
+```
+푸는 방법 자체는 굉장히 쉬운데 이걸 어떻게 구현할지 고민이 컸다.  
+냅다 int형 돌려서 최대값 찾을수도있고 흔히 일단 `Arrays`형으로 바꿔보기도 하니깐  
+근데 최대값만 찾으면 된다는점에서 최대힙이 생각이 나서 그걸 바로 사용했다.  
+물론 코드는 몰라서 검색했는데..  
+외워야하는것인가..  
+
+다른사람 푼거보면 `Arrays.sort(sizes[i]);`로 일단 돌려서 최대값 찾기도하고 하는데 내방법이 좀더 간결한거같긴하다.  
+
+---
+
+
 ## 20240307  
 ### 스프링이 제공하는 빈 후처리기  
 스프링 라이브러리에 `spring-boot-starter-aop`을 추가하면 프록시 팩토리를 자동으로 `bean`으로 등록해주며 이전에는 프록시 팩토리를 `bean`으로 등록하면서 페키지 설정 이런거 좀 해줬는데 아에 할 필요가 없다.  
