@@ -112,3 +112,39 @@ public class Main {
 해쉬를 사용하면 넣을때부터 정리되서 넣기 때문에 후연산이 편리하다. 정리가 우선적으로 필요한 경우 사용가능할거같다.  
 해쉬를 만들고나니 나중에 순회할때 어찌하나 보니깐 `Iterator<Integer> it = map.values().iterator();`새로운 자료형에 넣어야한다.  
 정답은 공식이 필요했는데 `(옷종류1+1) x (옷종류2의개수 +1) X ... -1`이런식 이였다. 먼가 공식이 필요할거같은데 라고 생각은 했는데 스스로 생각하기 어려웠다.  
+
+
+---
+
+## 20240319  
+### 포인트컷 분리  
+
+`@Aspect`사용할때 포인트컷을 분리해서 사용할 수 있다.
+
+```java
+@Slf4j
+@Aspect
+public class AspectV2 {
+
+ //hello.aop.order 패키지와 하위 패키지
+ ("execution(* hello.aop.order..*(..))") //pointcut expression
+ private void allOrder(){} //pointcut signature
+
+ @Around("allOrder()")
+ public Object doLog(ProceedingJoinPoint joinPoint) throws Throwable {
+ log.info("[log] {}", joinPoint.getSignature());
+ return joinPoint.proceed();
+ }
+}
+```
+`@Pointcut`이런식으로 여기에다만 경로를 지정하고 함수명을 ` @Around("allOrder()")`사용할곳에 가져다 쓰면된다.  
+반환타입은 void  
+코드내용비우기  
+public, private둘다가능  
+
+이런 조건들로 경로에 대해서 함수명으로 이름을 지어줄 수 있고  
+접근자 설정으로 이런 경로만 모아두고 다른곳에는 어드바이저만 모아둬서 여러개 꺼내서 쓸수도있다 모듈화  
+
+
+---
+
