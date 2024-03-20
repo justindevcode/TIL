@@ -148,3 +148,84 @@ public, private둘다가능
 
 ---
 
+## 20240320  
+### 프로그래머스 기능개발 스택/큐 2단계
+
+프로그래머스 팀에서는 기능 개선 작업을 수행 중입니다. 각 기능은 진도가 100%일 때 서비스에 반영할 수 있습니다.  또, 각 기능의 개발속도는 모두 다르기 때문에 뒤에 있는 기능이 앞에 있는 기능보다 먼저 개발될 수 있고, 이때 뒤에 있는 기능은 앞에 있는 기능이 배포될 때 함께 배포됩니다.  먼저 배포되어야 하는 순서대로 작업의 진도가 적힌 정수 배열 progresses와 각 작업의 개발 속도가 적힌 정수 배열 speeds가 주어질 때 각 배포마다 몇 개의 기능이 배포되는지를 return 하도록 solution 함수를 완성하세요.
+
+```java
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        int[] arr1 = {95, 90, 99, 99, 80, 99};
+        int[] arr2 = {1, 1, 1, 1, 1, 1};
+        Solution solution = new Solution();
+        System.out.println("Hello World");
+
+        int[] arr3 = solution.solution(arr1, arr2);
+        for (int i : arr3) {
+            System.out.println(i);
+        }
+
+
+
+    }
+
+    static class Solution {
+        public static int[] solution(int[] progresses, int[] speeds) {
+            Deque<ArrayList<Integer>> stack = new ArrayDeque<>();
+            ArrayList<Integer> result = new ArrayList<>();
+
+            for (int i = 0; i < progresses.length; i++) {
+                ArrayList<Integer> arrayList = new ArrayList<>();
+                arrayList.add(progresses[i] + speeds[i]);
+                arrayList.add(speeds[i]);
+                stack.addFirst(arrayList);
+            }
+            while (true) {
+                int stackLen1 = stack.size();
+                int count = 0;
+                for (int i = 0; i < stackLen1; i++) {
+                    if (stack.getLast().get(0) >= 100) {
+                        count++;
+                        stack.removeLast();
+                    } else {
+                        break;
+                    }
+                }
+                if (count > 0) {
+                    result.add(count);
+                }
+                if (stack.isEmpty()) {
+                    break;
+                }
+
+
+                int stackLen2 = stack.size();
+                for (int i = 0; i < stackLen2; i++) {
+                    ArrayList<Integer> arrayList2 = stack.removeLast();
+                    arrayList2.set(0, arrayList2.get(0) + arrayList2.get(1));
+                    stack.addFirst(arrayList2);
+                }
+            }
+            int[] answer = result.stream().mapToInt(Integer::intValue).toArray();
+            return answer;
+        }
+    }
+}
+```
+더 효율이 좋다고 본 정답
+```
+for(int i=0; i<progresses.length; i++){
+        //progresses의 길이만큼 for문을 돌면서 , 
+        //progresses 각 인덱스 값이 100을 넘기 위한 최소일수 계산 후 queue에 add 메소드로 넣기
+            queue.add((int)Math.ceil((100.0-progresses[i])/speeds[i]));        
+        }
+.
+.
+.
+```
+내가풀은거도 정답은 나오는데 보통 이런식으로 첨부터 100%될수있는 날짜를 구해서 집어넣더라.  
+좀더 깊은 생각이 필요할거같다. 내 코드 보면서 전혀 직관적이지 않다는 생각은 들었다.  
+
