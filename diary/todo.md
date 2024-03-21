@@ -229,3 +229,46 @@ for(int i=0; i<progresses.length; i++){
 내가풀은거도 정답은 나오는데 보통 이런식으로 첨부터 100%될수있는 날짜를 구해서 집어넣더라.  
 좀더 깊은 생각이 필요할거같다. 내 코드 보면서 전혀 직관적이지 않다는 생각은 들었다.  
 
+---
+
+## 20240321
+### 프로그래머스 H-index 정렬 2단계
+
+배운것  
+* `ArrayList` 역순 정렬법 `Collections.sort(arrayList, Collections.reverseOrder());`
+
+H-Index는 과학자의 생산성과 영향력을 나타내는 지표입니다. 어느 과학자의 H-Index를 나타내는 값인 h를 구하려고 합니다. 위키백과1에 따르면, H-Index는 다음과 같이 구합니다.  어떤 과학자가 발표한 논문 n편 중, h번 이상 인용된 논문이 h편 이상이고 나머지 논문이 h번 이하 인용되었다면 h의 최댓값이 이 과학자의 H-Index입니다.  어떤 과학자가 발표한 논문의 인용 횟수를 담은 배열 citations가 매개변수로 주어질 때, 이 과학자의 H-Index를 return 하도록 solution 함수를 작성해주세요.  
+인풋 {3, 0, 6, 1, 5} 리턴 3  
+
+내가푼것
+```java
+import java.util.*;
+
+public class Main {
+	public static int[] arr1 = {3, 0, 6, 1, 5};
+	
+	public static void main(String[] args) {
+		Solution solution = new Solution();
+		System.out.println(solution.solution(arr1));
+	}
+
+	public static class Solution {
+		public int solution(int[] citations) {
+			ArrayList<Integer> arrayList = new ArrayList<>();
+			for (int citation : citations) {
+				arrayList.add(citation);
+			}
+			Collections.sort(arrayList, Collections.reverseOrder());
+			for (int i = 0; i < arrayList.size(); i++) {
+				if (arrayList.get(i) < i + 1) {
+					return i;
+				}
+			}
+			return arrayList.size();
+		}
+	}
+}
+```
+H-index가 뭔지 그냥 글을 이해하는데 오래걸렸다 결국 그냥 구글링해서 뭔지 한글로 다시 봤다.  
+더 깔끔한 정답 코드보니 처음부터 return값으로 최대값 넣어두고 돌리면 좀더 간편할거같다. 그리고 `ArrayList`까지 쓸 필요는 없는 문제 이긴 했다.  
+
