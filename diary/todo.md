@@ -424,3 +424,93 @@ returning = "result")
 
 이렇게 `@Around`의 쪼개진 버전이 있는 이유는 `@Around`에서 실수로 `Object result = joinPoint.proceed();`를 빼먹으면 엄청난 오류가 생길 수 있지만 파악하기 어렵고  
 다른 사람들이 코드를 이해할때 어려운 부분도 많으며 스스로 내가 사용범위까지만 제약하며 사용하면 이해도 쉽고 오류날 확률도 줄어듭니다.  
+
+---
+
+## 20240323  
+### 프로그래머스 모의고사 완전탐색 1단계  
+
+배운것
+* `Math`나 `first[i%5]`이런거 익숙해지기
+
+수포자는 수학을 포기한 사람의 준말입니다. 수포자 삼인방은 모의고사에 수학 문제를 전부 찍으려 합니다. 수포자는 1번 문제부터 마지막 문제까지 다음과 같이 찍습니다.  1번 수포자가 찍는 방식: 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, ... 2번 수포자가 찍는 방식: 2, 1, 2, 3, 2, 4, 2, 5, 2, 1, 2, 3, 2, 4, 2, 5, ... 3번 수포자가 찍는 방식: 3, 3, 1, 1, 2, 2, 4, 4, 5, 5, 3, 3, 1, 1, 2, 2, 4, 4, 5, 5, ...  1번 문제부터 마지막 문제까지의 정답이 순서대로 들은 배열 answers가 주어졌을 때, 가장 많은 문제를 맞힌 사람이 누구인지 배열에 담아 return 하도록 solution 함수를 작성해주세요.
+
+{1,3,2,4,2} 리턴 1,2,3
+
+내풀이
+```java
+import java.util.*;
+
+public class Main {
+	public static int[] arr1 = {1,3,2,4,2};
+	public static int[] arr2 = {1,2,3,4,5};
+
+	public static void main(String[] args) {
+		Solution solution = new Solution();
+		int[] arr3 = solution.solution(arr2);
+		for (int i : arr3) {
+			System.out.println(i);
+		}
+	}
+
+	public static class Solution {
+		public int[] solution(int[] answers) {
+			int[] array1 = {1, 2, 3, 4, 5};
+			int[] array2 = {2, 1, 2, 3, 2, 4, 2, 5};
+			int[] array3 = {3, 3, 1, 1, 2, 2, 4, 4, 5, 5};
+			Deque<Integer> deque1 = new ArrayDeque<>();
+			Deque<Integer> deque2 = new ArrayDeque<>();
+			Deque<Integer> deque3 = new ArrayDeque<>();
+			for (int i : array1) {
+				deque1.addFirst(i);
+			}
+			for (int i : array2) {
+				deque2.addFirst(i);
+			}
+			for (int i : array3) {
+				deque3.addFirst(i);
+			}
+			HashMap<Integer, Integer> hashMap = new HashMap<>();
+			hashMap.put(1,0);
+			hashMap.put(2,0);
+			hashMap.put(3,0);
+			for (int i = 0; i < answers.length; i++) {
+				if (answers[i] == deque1.getLast()) {
+					hashMap.put(1,hashMap.get(1)+1);
+				}
+				if (answers[i] == deque2.getLast()) {
+					hashMap.put(2,hashMap.get(2)+1);
+				}
+				if (answers[i] == deque3.getLast()) {
+					hashMap.put(3,hashMap.get(3)+1);
+				}
+				deque1.addFirst(deque1.removeLast());
+				deque2.addFirst(deque2.removeLast());
+				deque3.addFirst(deque3.removeLast());
+			}
+
+			int maxValue = Collections.max(hashMap.values());
+
+			// 최대값을 가진 키들을 추출
+			ArrayList<Integer> maxKeys = new ArrayList<>();
+			for (Map.Entry<Integer, Integer> entry : hashMap.entrySet()) {
+				if (entry.getValue() == maxValue) {
+					maxKeys.add(entry.getKey());
+				}
+			}
+			Collections.sort(maxKeys);
+			int[] maxKeysArray = new int[maxKeys.size()];
+			for (int i = 0; i < maxKeys.size(); i++) {
+				maxKeysArray[i] = maxKeys.get(i);
+			}
+			return maxKeysArray;
+		}
+	}
+}
+```
+쉬운방법이 있긴할거같은데 그냥 논리적으로 내가 이해하기 편하게 데큐랑 해쉬를 사용했다. 그랬더니 코드가 좀 복잡해졌다.  
+간단한 풀이 보니 점수계산은 `if(answers[i] == first[i%5]) score[0]++;`이런식으로 나머지로 처리했고  
+최대값을 `int max = Math.max(score[0], Math.max(score[1], score[2]));`그냥 값만 구한후에 `for`문으로 1부터 찾아서 같은거 넣으면  
+자동으로 내림차순 완성  
+
+쉬운문제이긴 하지만 `Math`나 `first[i%5]`이런거 좀 익숙해져야한다.
