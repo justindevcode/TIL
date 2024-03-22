@@ -272,3 +272,155 @@ public class Main {
 H-index가 뭔지 그냥 글을 이해하는데 오래걸렸다 결국 그냥 구글링해서 뭔지 한글로 다시 봤다.  
 더 깔끔한 정답 코드보니 처음부터 return값으로 최대값 넣어두고 돌리면 좀더 간편할거같다. 그리고 `ArrayList`까지 쓸 필요는 없는 문제 이긴 했다.  
 
+---
+
+## 20240322  
+### 스프링 AOP구현  
+#### 어드바이스 추가  
+
+```java
+@Around("allOrder()")
+ public Object doLog(ProceedingJoinPoint joinPoint) throws Throwable {
+ log.info("[log] {}", joinPoint.getSignature());
+ return joinPoint.proceed();
+ }
+ //hello.aop.order 패키지와 하위 패키지 이면서 클래스 이름 패턴이 *Service
+ @Around("allOrder() && allService()")
+ public Object doTransaction(ProceedingJoinPoint joinPoint) throws Throwable
+{
+ try {
+ log.info("[트랜잭션 시작] {}", joinPoint.getSignature());
+ Object result = joinPoint.proceed();
+ log.info("[트랜잭션 커밋] {}", joinPoint.getSignature());
+ return result;
+ } catch (Exception e) {
+ log.info("[트랜잭션 롤백] {}", joinPoint.getSignature());
+ throw e;
+ } finally {
+ log.info("[리소스 릴리즈] {}", joinPoint.getSignature());
+ }
+ }
+```
+이런식으로 그냥 `@Around`에 포인트컷 같은거 하나더 추가해서 넣어주면 작동이됩니다.  
+다만 순서는 보장이 안된다 해결법은 아래쪽에서 다시 확인해 보겠습니다.  
+
+#### 포인트컷 참조  
+
+포인트컷 들을 따로 클레스를 빼서 사용하는 방법이 있습니다.  
+
+```java
+public class Pointcuts {
+ //hello.springaop.app 패키지와 하위 패키지
+ @Pointcut("execution(* hello.aop.order..*(..))")
+ public void allOrder(){}
+```
+이런식으로 일단 따로 클레스 만들어주고(함수는 퍼블릭으로 열어줘야합니다.)  
+
+```java
+@Around("hello.aop.order.aop.Pointcuts.allOrder()")
+ public Object doLog(ProceedingJoinPoint joinPoint) throws Throwable {
+ log.info("[log] {}", joinPoint.getSignature());
+ return joinPoint.proceed();
+ }
+```
+실제사용 `@Around`쪽에서는 조금 귀찮지만 페키지명까지 다 복사해서 넣어주면 작동합니다.
+
+#### 어드바이스 순서  
+
+순서를 설정하는데 기본적으로 `@Order(2)`를 사용합니다. 다만 이순서의 기준이 `@Aspect`를 달고 있는 `클레스` 기반이란것이 문제입니다. 그래서 클레스를 분리해줘야합니다.  
+
+```java
+@Slf4j
+public class AspectV5Order {
+ @Aspect
+ @Order(2)
+ public static class LogAspect {
+ @Around("hello.aop.order.aop.Pointcuts.allOrder()")
+ public Object doLog(ProceedingJoinPoint joinPoint) throws Throwable {
+ log.info("[log] {}", joinPoint.getSignature());
+ return joinPoint.proceed();
+ }
+ }
+ @Aspect
+ @Order(1)
+ public static class TxAspect {
+ @Around("hello.aop.order.aop.Pointcuts.orderAndService()")
+ public Object doTransaction(ProceedingJoinPoint joinPoint) throws
+Throwable {
+ try {
+.
+.
+.
+```
+지금 예시로는 이너클래스로 만들었는데 `public static class LogAspect` 아무튼 클레스를 분리해서 ` @Aspect`를 기준으로 ` @Order(2)`를 붙여주면 순서데로 작동합니다.  
+
+#### 어드바이스 종류  
+
+항상 `@Around`만 써왔는데 여러가지 종류가 있습니다.  
+
+`@Before` : 조인 포인트 실행 이전에 실행  
+`@AfterReturning` : 조인 포인트가 정상 완료후 실행  
+`@AfterThrowing` : 메서드가 예외를 던지는 경우 실행  
+`@After` : 조인 포인트가 정상 또는 예외에 관계없이 실행(finally)  
+
+기본적으로는 아래의 모든기능을 `@Around`가 포함하고는 있습니다.
+
+```java
+@Around("hello.aop.order.aop.Pointcuts.orderAndService()")
+ public Object doTransaction(ProceedingJoinPoint joinPoint) throws Throwable
+{
+ try {
+
+ //@Before
+ log.info("[around][트랜잭션 시작] {}", joinPoint.getSignature());
+
+ Object result = joinPoint.proceed();
+
+ //@AfterReturning
+ log.info("[around][트랜잭션 커밋] {}", joinPoint.getSignature());
+
+ return result;
+
+ } catch (Exception e) {
+
+ //@AfterThrowing
+ log.info("[around][트랜잭션 롤백] {}", joinPoint.getSignature());
+
+ throw e;
+ } finally {
+
+ //@After
+ log.info("[around][리소스 릴리즈] {}", joinPoint.getSignature());
+
+ }
+ }
+```
+
+하위의 4개들은 `@Around`의 특정 부분만 담당합니다,
+
+```java
+@Before("hello.aop.order.aop.Pointcuts.orderAndService()")
+ public void doBefore(JoinPoint joinPoint) {
+ log.info("[before] {}", joinPoint.getSignature());
+ }
+```
+`@Before`는 이후의 ` Object result = joinPoint.proceed();`를 자동으로 알아서 실행시켜줍니다.
+
+```java
+@AfterReturning(value = "hello.aop.order.aop.Pointcuts.orderAndService()", 
+returning = "result")
+ public void doReturn(JoinPoint joinPoint, Object result) {
+ log.info("[return] {} return={}", joinPoint.getSignature(), result);
+ }
+```
+`@AfterReturning`는 `return`으로 돌아와서 다시 `return`하기전의 사이만 담당합니다. 자동으로 기존의 넘어온 객체를 리턴해줍니다. 객체자체에 `setter`같은게 없으면 조작이 어렵습니다.  
+
+`@AfterThrowing`도 예외가 발생했을때 다시 `throw e;`하기전 까지 코드이고  
+
+`@After` 도 `finally`코드만 담당 합니다.  
+
+순서는 같은  ` @Aspect` 안에서는  `@Around , @Before , @After , @AfterReturning , @AfterThrowing`를 보장하고 동일한 어노테이션끼리는 순서를 보장하지 않습니다.  
+더불어 사용하는 매개변수가 조금 다릅니다.  
+
+이렇게 `@Around`의 쪼개진 버전이 있는 이유는 `@Around`에서 실수로 `Object result = joinPoint.proceed();`를 빼먹으면 엄청난 오류가 생길 수 있지만 파악하기 어렵고  
+다른 사람들이 코드를 이해할때 어려운 부분도 많으며 스스로 내가 사용범위까지만 제약하며 사용하면 이해도 쉽고 오류날 확률도 줄어듭니다.  
