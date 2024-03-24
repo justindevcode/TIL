@@ -514,3 +514,82 @@ public class Main {
 자동으로 내림차순 완성  
 
 쉬운문제이긴 하지만 `Math`나 `first[i%5]`이런거 좀 익숙해져야한다.
+
+---
+
+## 20240324  
+### 스프링AOP 포인트컷지시자 execution
+포인트컷을 편리하게 표현하기위해 표현식을 사용하는데 `@Pointcut("execution(* hello.aop.order..*(..))")`보통 이와같다.  
+이것의 종류는 여러가지가 있는데 그중 가장 많이 사용하는 `execution`부터 알아보자  
+`public java.lang.String hello.aop.member.MemberServiceImpl.hello(java.lang.String)`정확히 이런녀석을 가르켜보자  
+접근제어자?: public  
+반환타입: String  
+선언타입?: hello.aop.member.MemberServiceImpl  
+메서드이름: hello  
+파라미터: (String)  
+예외?: 생략  
+
+이중 ? 는 생략 가능한것  
+
+가장많이 생략한것
+`pointcut.setExpression("execution(* *(..))");`  
+접근제어자?: 생략  
+반환타입: *  
+선언타입?: 생략  
+메서드이름: *  
+파라미터: (..)  
+예외?: 없음  
+
+*은 아무값이 들어와도 된다는뜻이다.  
+파라미터에서 .. 은 파라미터의 타입과 파라미터 수가 상관없다는 뜻이다.
+
+메서드 이름 관련
+```
+pointcut.setExpression("execution(* hello(..))");
+pointcut.setExpression("execution(* hel*(..))");
+pointcut.setExpression("execution(* *el*(..))");
+```
+이런식으로 단어 앞이든 뒤든 서치가능  
+
+페키지관련 
+```
+//전체
+pointcut.setExpression("execution(* hello.aop.member.MemberServiceImpl.hello(..))")
+
+//*활용
+pointcut.setExpression("execution(* hello.aop.member.*.*(..))")
+
+// ..은 하위의 모든것 (그래서.이 하나면 정확히 그위치 라서 오류남)
+pointcut.setExpression("execution(* hello.aop..*.*(..))");
+```
+. : 정확하게 해당 위치의 패키지  
+.. : 해당 위치의 패키지와 그 하위 패키지도 포함  
+
+
+타입매칭 부모타입
+```
+pointcut.setExpression("execution(* hello.aop.member.MemberService.*(..))");
+```
+`MemberService`는 우리가 찾을 녀석의 인터페이스다. 중요한건 인터페이스에 `존재하고` 자식녀석에게 구현되어있으면 자식을 찾을 수 있다.  
+다만 실제객체에서 내가 새로 구현한것은 찾을 수 없다.  
+
+파라미터
+```
+//정확히 하나의 파라미터 허용, 모든 타입 허용
+pointcut.setExpression("execution(* *(*))");
+
+//숫자와 무관하게 모든 파라미터, 모든 타입 허용
+pointcut.setExpression("execution(* *(..))");
+
+//String 타입으로 시작, 숫자와 무관하게 모든 파라미터, 모든 타입 허용
+pointcut.setExpression("execution(* *(String, ..))");
+```
+(String) : 정확하게 String 타입 파라미터  
+() : 파라미터가 없어야 한다.  
+(*) : 정확히 하나의 파라미터, 단 모든 타입을 허용한다.  
+(*, *) : 정확히 두 개의 파라미터, 단 모든 타입을 허용한다.  
+(..) : 숫자와 무관하게 모든 파라미터, 모든 타입을 허용한다. 참고로 파라미터가 없어도 된다. 0..* 로 이해하 면 된다.  
+(String, ..) : String 타입으로 시작해야 한다. 숫자와 무관하게 모든 파라미터, 모든 타입을 허용한다.  
+예) (String) , (String, Xxx) , (String, Xxx, Xxx) 허용  
+
+생각보다 말장난같고 헷갈리는것이 많아 유의하자.  
