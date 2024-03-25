@@ -593,3 +593,94 @@ pointcut.setExpression("execution(* *(String, ..))");
 예) (String) , (String, Xxx) , (String, Xxx, Xxx) 허용  
 
 생각보다 말장난같고 헷갈리는것이 많아 유의하자.  
+
+---
+
+## 20240325  
+### 프로그래머스 소수찾기 완전탐색(DFS) 2단계
+
+* 순열DFS
+* 소수찾기
+
+한자리 숫자가 적힌 종이 조각이 흩어져있습니다. 흩어진 종이 조각을 붙여 소수를 몇 개 만들 수 있는지 알아내려 합니다.  각 종이 조각에 적힌 숫자가 적힌 문자열 numbers가 주어졌을 때, 종이 조각으로 만들 수 있는 소수가 몇 개인지 return 하도록 solution 함수를 완성해주세요.  
+
+제한사항
+* numbers는 길이 1 이상 7 이하인 문자열입니다.
+* numbers는 0~9까지 숫자만으로 이루어져 있습니다.
+* "013"은 0, 1, 3 숫자가 적힌 종이 조각이 흩어져있다는 의미입니다.
+
+먼가 DFS같이 조합을해야하며 에라토스테네스의 체를 이용해야겠다는 생각은 들었는데 그냥 구현하기가 너무 어려웠다.  
+
+순열의 경우 (https://bcp0109.tistory.com/14) 해당 블로그를 참고하여 공부했다.  
+더불어 에라토스테네스의 체는 원리를 몰라 검색하여 찾아보았다.  
+
+```
+import java.util.*;
+
+public class Main {
+	public static String arr1 = "17";
+	public static int[] arr2 = {1,2,3,4,5};
+
+	public static void main(String[] args) {
+		Solution solution = new Solution();
+		int result = solution.solution(arr1);
+		System.out.println(result);
+	}
+
+	public static class Solution {
+		public int solution(String numbers) {
+			Set<Integer> set = new HashSet<>();
+			int[] numbersInt = new int[numbers.length()];
+			for (int i = 0; i < numbers.length(); i++) {
+				numbersInt[i] = Character.getNumericValue(numbers.charAt(i));
+			}
+			ArrayList arrayList = new ArrayList<>();
+			boolean[] visited = new boolean[numbers.length()];
+			perm(numbersInt, arrayList, visited, 0, numbers.length(), numbers.length(),set);
+			int count = 0;
+			for (Integer integer : set) {
+				if (isPrime(integer)) {
+					count++;
+				}
+			}
+
+			return count;
+		}
+
+		public void perm(int[] arr, ArrayList<Integer> arrayList, boolean[] visited, int depth, int n, int r, Set<Integer> set) {
+			for (int i=0; i<n; i++) {
+				if (visited[i] != true) {
+					visited[i] = true;
+					arrayList.add(arr[i]);
+					int result = combineArrayToNumber(arrayList);
+					System.out.println(result + "DFS");
+					set.add(result);
+					perm(arr, arrayList, visited, depth + 1, n, r, set);
+					arrayList.remove(depth);
+					visited[i] = false;
+				}
+			}
+		}
+
+		public int combineArrayToNumber(ArrayList<Integer> arrayList) {
+			int result = 0;
+			for (Integer integer : arrayList) {
+				result = result * 10 + integer;
+			}
+			return result;
+		}
+
+		public boolean isPrime(int n){
+			if(n<2) return false;
+
+			for(int i=2; i<=(int) Math.sqrt(n); i++) {
+				if(n%i == 0) {
+					return false;
+				}
+			}
+
+			return true;
+		}
+	}
+}
+```
