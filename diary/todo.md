@@ -684,3 +684,81 @@ public class Main {
 	}
 }
 ```
+
+---
+
+## 20240326  
+### 스프링 포인트컷 그외 지시자1
+
+#### within
+`execution`의 기능에서 타입부분만 사용하는 느낌이다.  
+
+```java
+
+//MemberServiceImpl 적용
+pointcut.setExpression("within(hello.aop.member.MemberServiceImpl)");
+
+//MemberServiceImpl의 부모타임 적으면 적용안됨!
+pointcut.setExpression("within(hello.aop.member.MemberService)"); = False
+
+pointcut.setExpression("within(hello.aop.member.*Service*)");
+```
+
+하나 주의할점은 `execution`과는 다르게 부모타입을 적는다고 하위까지 인정안해준다.  
+
+
+#### args
+`execution`의 기능에서 `args`만 사용하는 느낌이다.  
+
+```java
+pointcut("args(String)")
+
+pointcut("args(Object)")
+
+pointcut("args()")
+
+pointcut("args(String,..)")
+
+//스트링 타입 매개변수
+pointcut("args(java.io.Serializable)") = true
+pointcut("args(Object)") = true
+
+pointcut("execution(* *(java.io.Serializable))") = false
+(pointcut("execution(* *(Object))") = false
+```
+
+여기서도 주의할점이 있는데 `execution`은 정직으로 판단(코드에 박힌 글자 그데로판단) = 완벽하게 타입이 일치해야함 (부모안됨)  
+`args` 실제 런타임에서 객체넘어온거로 확인 (동적) = 부모 클레스도 받아줄 수 있다.  
+
+#### @target, @within  
+둘다 해당 클레스에 어떤 어노테이션이 붙어있는지로 확인  
+
+```
+@Around("execution(* hello.aop..*(..)) && @target(hello.aop.member.annotation.ClassAop)")
+@Around("execution(* hello.aop..*(..)) && @within(hello.aop.member.annotation.ClassAop)")
+```
+
+주의할 점 2가지  
+1. target은 자식 클래스타입에서 부모에 존재하는(자식클레스에서 오버라이딩 등 안하고 부모꺼 바로쓰기) 함수 사용해도 적용 within은 오버라이딩 등 실제 지정된 클래스에 함수가 안보이면 적용 안함
+2. `args, @args, @target`이 3가지는 런타임환경에서 실제 스프링 컨테이너가 만들어지는 시점에 적용이 가능하기에 `execution(* hello.aop..*(..)) &&` 앞쪽에서 이렇게 범위를 한번 지정해주지 않으면 스프링에 존재 하는 모든 `bean`에 프록시를 한번 만들어보고 확인하고 하는 작업을 하게 된다. 문제는 그와중에 `final`로 지정된 `bean`들도 있기때문에 오류가 날 수 있다.
+
+#### @annotation, @args
+`@annotation` 메소드에 붙은 어노테이션으로 적용하거나 `@args` 함수의 매개변수 타입속에 존재하는 어노테이션으로 적용  
+
+```
+@MethodAop 란게 붙어있는 함수적용
+@Around("@annotation(hello.aop.member.annotation.MethodAop)")
+
+@Check 란게 함수의 매개변수 타입에 붙어있으면 적용
+@args(test.Check)
+```
+
+#### bean 
+
+bean : 스프링 전용 포인트컷 지시자, 빈의 이름으로 지정한다.
+스프링 빈의 이름으로 AOP 적용 여부를 지정한다. 이것은 스프링에서만 사용할 수 있는 특별한 지시자이다.
+
+```
+스프링 컨테이너의 orderService아름, Repository로 끝나는 빈에 적용
+@Around("bean(orderService) || bean(*Repository)")
+```
