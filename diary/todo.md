@@ -1063,3 +1063,209 @@ https://jhlee-developer.tistory.com/entry/MYSQL-%EC%8B%A4%ED%96%89-%EA%B3%84%ED%
 https://0soo.tistory.com/235
 https://cookie-dev.tistory.com/31  
 
+---
+
+## 20240328
+### 루시카토 CS 자바 파라미터 전달방식  
+
+#### 인트로
+
+일반적으로 각 언어마다 변수를 넘겨주는 방법은 2가지가 있습니다. Pass By Value, Pass By Reference 인데 이둘의 차이와 자바에서는 어떻게 쓰이는지 알아보겠습니다.  
+
+문제풀기
+```java
+class Dog {
+
+    private String name;
+
+    public Dog (String name) {
+        this.name = name;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+}
+
+public class Test {
+
+    public static void main(String[] args) {
+        int x = 10;
+        int[] y = {2, 3, 4};
+        Dog dog1 = new Dog("강아지1");
+        Dog dog2 = new Dog("강아지2");
+        
+        // 함수 실행
+        foo(x, y, dog1, dog2);
+        
+        // 어떤 결과가 출력될 것 같은지 혹은 값이 어떻게 변할지 예상해보세요!
+        System.out.println("x = " + x);
+        System.out.println("y = " + y[0]);
+        System.out.println("dog1.name = " + dog1.getName());
+        System.out.println("dog2.name = " + dog2.getName());
+    }
+
+    public static void foo(int x, int[] y, Dog dog1, Dog dog2) {
+        x++;
+        y[0]++;
+        dog1 = new Dog("이름 바뀐 강아지1");
+        dog2.setName("이름 바뀐 강아지2");
+    }
+
+}
+```
+
+출력답
+```java
+x = 10
+y = 3
+dog1.name = 강아지1
+dog2.name = 이름 바뀐 강아지2
+```
+
+#### 메모리할당 
+
+위의 코드에서 메모리 할당이 어떻게 되는지 확인해보며 자바의 매개변수 전달 방식을 알아보겠습니다.  
+
+어떠한 변수를 선언한다는 것은 메모리를 할당한다는 것을 의미합니다. 변수를 선언하기 위해 할당되는 메모리로는 크게 스택과 힙이 있습니다. 스택 영역에는 함수의 호출과 함께 지역 변수 또는 매개변수 등이 할당되며 정렬된 방식으로 메모리가 할당되고 해제됩니다. 반면에 힙 영역에는 클래스 변수(또는 인스턴스 변수) 또는 객체 등이 할당되며, 우연하고 무질서하게 메모리가 할당됩니다.. (그래서 JVM은 무질서하게 관리되는 힙 영역을 위주로 가비지 컬렉터를 통해 메모리의 해제를 관리합니다.)  
+
+* 원시변수
+Java에서 변수는 객체가 아닌 실제 값들인 int, double, float boolean 등과 같은 원시 값(Primitive Value)들이 존재합니다.  
+```java
+public void test() {
+    // Primitive Value
+    int x = 3;
+    float y = 10.012f;
+    boolean isTrue = true;
+}
+```
+이와같은 경우 `stack`영역에 실제로 저장됩니다.  
+
+![1](https://github.com/299unknown/diary/assets/151738362/0dd2ac45-c9ed-46af-9eb4-e75409eb3e69)
+
+* 객체의 메모리 할당
+
+```java
+public void test() {
+    // Primitive Value
+    int x = 3;
+    float y = 101.012f;
+    boolean isTrue = true;
+    
+    // Object
+    String name = "MangKyu";
+}
+```
+![1](https://github.com/299unknown/diary/assets/151738362/ea6a3f8d-2915-4f1c-bf94-3f927b9a3d64)
+
+객체의 경우는 조금 다릅니다. 우선 변수명 `name`으로 `stack`에 메모리가 할당이 된후에 `heap`영역에 실제 값이 저장되고 그 값의 주소가 저장됩니다.  
+
+```java
+public void test() {
+    // Primitive Value
+    int x = 3;
+    float y = 101.012f;
+    boolean isTrue = true;
+    
+    // Object
+    String name = "MangKyu";
+    
+    String[] names = new String[3];
+    names[0] = "I";
+    names[1] = "am";
+    names[2] = new String("MangKyu");
+    
+}
+```
+![1](https://github.com/299unknown/diary/assets/151738362/1a967f71-d1ae-4120-8c6f-297d14ca24cd)
+
+배열의 경우에도 변수명으로 `stack`에 메모리가 할당된 후에 `heap`에서 참조의 참조를 통해 값들을 관리하게됩니다.  
+
+#### 문제 복기
+
+```java
+public static void main(String[] args) {
+        int x = 10;
+.
+.
+.
+public static void foo(int x, int[] y, Dog dog1, Dog dog2) {
+        x++;
+```
+
+![1](https://github.com/299unknown/diary/assets/151738362/24868215-d8a8-4c16-83ed-c8128f94ce5e)
+원시값의 경우에는 `stack`에서 새로운 x가 생성되며 그값을 실제로 복사해서 `stack`에 가지고 있습니다. 이것으로 함수안에서 x가 변경되어도 함수가 끝나게 되면 `stack`에서 할당된 메모리가 pop 되면서 없어지게 됩니다.  
+
+
+```java
+public static void main(String[] args) {
+        int[] y = {2, 3, 4};
+.
+.
+.
+public static void foo(int x, int[] y, Dog dog1, Dog dog2) {
+        y[0]++;
+```
+![1](https://github.com/299unknown/diary/assets/151738362/fa5b5f8c-5ac5-4355-b757-36ad6e2524d3)
+
+y의 경우 함수안에서 새롭게 `stack` 메모리가 생성되지만 주소값이 같은 `heap`을 가르키고 있습니다. 그렇기에 함수 안에서 함수안의 y를 수정하면 기존의 y에도 적용되게됩니다.  
+
+**중요**
+```java
+public static void main(String[] args) {
+        Dog dog1 = new Dog("강아지1");
+.
+.
+.
+public static void foo(int x, int[] y, Dog dog1, Dog dog2) {
+        dog1 = new Dog("이름 바뀐 강아지1");
+```
+![1](https://github.com/299unknown/diary/assets/151738362/ac831386-d400-44d7-91df-2bbedf43447c)
+
+dog1의 경우 우선적으로 다른 경우와 똑같이 dog1이라는 변수가 `stack`에 새로 생기며 주소값도 기존의 값을 그대로 복사해서 원래 dog1을 가르키고 있습니다.  
+
+![1](https://github.com/299unknown/diary/assets/151738362/c75fc0d5-95c9-42ba-8b63-d9ef13716b90)
+
+하지만 `new Dog`로 새로 생성하게되면 `heap`영역에서 `new Dog("이름 바뀐 강아지1");` 해당하는 메모리가 할당되고 그 주소를 다시 **함수 dog1메모리에** 저잘하게 됩니다.  
+그렇기때문에 함수가 종료되면 함수의 dog1은 완전히 소멸되고 기존의 dog1만 남게됩니다.  
+
+
+```java
+public static void main(String[] args) {
+        Dog dog2 = new Dog("강아지2");
+.
+.
+.
+public static void foo(int x, int[] y, Dog dog1, Dog dog2) {
+        dog2.setName("이름 바뀐 강아지2");
+```
+![1](https://github.com/299unknown/diary/assets/151738362/917e1163-d835-45aa-9e97-7510efff5b9e)
+![2](https://github.com/299unknown/diary/assets/151738362/ab4b1c8e-5902-4c1b-a9f9-fc62571cb06a)
+
+dog2의 경우 똑같이 새로생성된 dog2가 `stack`에서 기존의 dog2와 같은 주소를 가지고 있으며 주소값을 통해 Heap 영역에 존재하는 객체에 접근하여 set을 통해 값을 변화시켜주고 있으므로 원래값의 변경이 가능합니다.  
+
+
+#### 자바의 Pass By Value방식  
+
+![1](https://github.com/299unknown/diary/assets/151738362/b51921b3-ee40-47a5-9371-6666effc7a65)
+
+자바에서는 `Pass By Value`으로 실제값을 전달한다고는 하지만 객체들은 `heap`영역에서 값들을 할당받고 그 주소를 `stack`에서 가지고있기때문에 함수안에서 새로운 객체를 생성하든 뭐든 밖의 `dog1`이라는 변수의 주소값을 변경해줄수는 없기때문에 밖의 `dog1` 변수의 객체를 변경해줄 수는 없습니다.  
+
+객체가 할당될때 `heap`영역에서 값들이 저장되고 그주소 `stack`에 저장하는 방식때문에 `Pass By Reference`방식이라 착각할 수 있는데 잘 공부해두는것이 좋을거같습니다.  
+
+#### 정리
+![`](https://github.com/299unknown/diary/assets/151738362/855dd839-de0a-4d41-b13d-56412ca2723b)
+
+
+#### 참고자료
+
+[Java] Pass By Value와 Pass By Reference의 차이 및 이해 포스트를 한번에 보기좋게 정리해보았습니다.  
+https://mangkyu.tistory.com/105  
+https://mangkyu.tistory.com/106  
+https://mangkyu.tistory.com/107  
+
