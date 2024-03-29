@@ -1286,7 +1286,8 @@ https://mangkyu.tistory.com/107
 
 #### JVM Heap 메모리 영역  
 
-![1](https://github.com/299unknown/diary/assets/151738362/4ba3511b-d521-4999-a809-1c79d82b70dd)
+
+![1](https://github.com/witwint/TIL/assets/108222981/0eaa7b76-9347-43b8-a2f1-383808ffe4d3)
 
 Young Generation(eden, s1, s2) : 새 객체 할당될때 처음 들어오는 위치  
 Old Generation(Tenured) : Young Generation에서 오랜시간 살아남응 객체들이 이동되는곳  
@@ -1294,7 +1295,7 @@ Metasapace : Class의 Meta 정보들이 이 영역에 저장, Native Memory 영�
 
 #### Reachable과 Unreachable  
 메모리를 관리하기위해 결국 어떤게 아직 쓰고있고 쓰지않는지 판별을 해야함 그 기준값들이 Reachable과 Unreachable  
-![1](https://github.com/299unknown/diary/assets/151738362/74a386f6-964d-4eff-bc8c-15723390359e)
+![1](https://github.com/witwint/TIL/assets/108222981/fa509670-4298-4c5f-bbd3-792978a3b83f)
 
 `stack`에서 생성된 `heap`의 객체를 참조한다고 하면 (아 이`heap`의 객체가 `stack`에 연결되어있으니 아직 사용중이구나) 실제사용중인걸 알 수 있다.  
 이런 요소들이 몇가지 있다.  
