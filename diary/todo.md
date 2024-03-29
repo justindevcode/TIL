@@ -1269,3 +1269,44 @@ https://mangkyu.tistory.com/105
 https://mangkyu.tistory.com/106  
 https://mangkyu.tistory.com/107  
 
+---
+
+## 20240329
+### 루시카토 CS 자바 GC  
+
+#### 인트로
+자바의 사용하지 않는 객체의 메모리를 GC(Garbage Collector)가 주기적으로 검사해서 청소
+
+
+#### 가비지 컬렉터와 가비지 컬렉션의 차이
+
+* 가비지 컬렉터 : 메모리 관리를 담당하는 시스템 또는 프로그램의 구성 요소이며, 메모리에서 더 이상 사용되지 않는 객체를 찾아 제거하여 메모리를 회수하는 역할을 수행한다.
+* 가비지 컬렉션 : 메모리 관리 기술 중 하나로, 가비지 컬렉터에 의해 수행되는 프로세스를 의미.
+가비지 컬렉션은 프로세스 자체를 얘기하고 컬렉터는 실제 역할을 수행하는 주체
+
+#### JVM Heap 메모리 영역  
+
+![1](https://github.com/299unknown/diary/assets/151738362/4ba3511b-d521-4999-a809-1c79d82b70dd)
+
+Young Generation(eden, s1, s2) : 새 객체 할당될때 처음 들어오는 위치  
+Old Generation(Tenured) : Young Generation에서 오랜시간 살아남응 객체들이 이동되는곳  
+Metasapace : Class의 Meta 정보들이 이 영역에 저장, Native Memory 영역에 위치하며, JVM이 아닌 OS 레벨에서 관리  
+
+#### Reachable과 Unreachable  
+메모리를 관리하기위해 결국 어떤게 아직 쓰고있고 쓰지않는지 판별을 해야함 그 기준값들이 Reachable과 Unreachable  
+![1](https://github.com/299unknown/diary/assets/151738362/74a386f6-964d-4eff-bc8c-15723390359e)
+
+`stack`에서 생성된 `heap`의 객체를 참조한다고 하면 (아 이`heap`의 객체가 `stack`에 연결되어있으니 아직 사용중이구나) 실제사용중인걸 알 수 있다.  
+이런 요소들이 몇가지 있다.  
+
+객체가 가질 수 있는 참조 종류
+
+* 힙 내의 다른 객체에 의한 참조
+* Java 스택, 즉 Java 메서드 실행 시에 사용하는 지역 변수와 파라미터들에 의한 참조
+* 네이티브 스택, 즉 JNI(Java Native Interface)에 의해 생성된 객체에 대한 참조
+* 메서드 영역의 정적 변수에 의한 참조
+
+이중 힙 내의 다른 객체에 의한 참조만 제외하면 모두 사용중인것을 알 수있다. 즉 아래 3가지 요소일때 Reachable 이라하고  
+아닐떄 Unreachable로 판별하여 Unreachable를 제거하는 방식으로 진행된다는것  
+
+
