@@ -1403,3 +1403,148 @@ HyperText Transfer Protocol
 ![1](https://github.com/witwint/TIL/assets/108222981/06a4ea1b-6f31-431d-bb3d-629765e9bc42)
 
 ---
+
+## 20240402
+### 스프링 AOP 포인트컷 매개변수 전달,this, target
+
+#### 매개변수 전달
+
+다음은 포인트컷 표현식을 사용해서 어드바이스에 매개변수를 전달할 수 있다.
+this, target, args,@target, @within, @annotation, @args
+
+```java
+@Before("allMember() && args(arg,..)")
+public void logArgs3(String arg) {
+log.info("[logArgs3] arg={}", arg);
+}
+```
+이런식으로 사용하면 `memberService.hello("helloA");` 여기의 `helloA`를 받아올 수 있는 느낌이다. 
+
+
+상세 예시들
+```java
+@Slf4j
+@Aspect
+static class ParameterAspect {
+@Pointcut("execution(* hello.aop.member..*.*(..))")
+private void allMember() {}
+@Around("allMember()")
+public Object logArgs1(ProceedingJoinPoint joinPoint) throws Throwable {
+Object arg1 = joinPoint.getArgs()[0];
+log.info("[logArgs1]{}, arg={}", joinPoint.getSignature(), arg1);
+return joinPoint.proceed();
+}
+@Around("allMember() && args(arg,..)")
+public Object logArgs2(ProceedingJoinPoint joinPoint, Object arg) throws
+Throwable {
+log.info("[logArgs2]{}, arg={}", joinPoint.getSignature(), arg);
+return joinPoint.proceed();
+}
+@Before("allMember() && args(arg,..)")
+public void logArgs3(String arg) {
+log.info("[logArgs3] arg={}", arg);
+}
+@Before("allMember() && this(obj)")
+public void thisArgs(JoinPoint joinPoint, MemberService obj) {
+log.info("[this]{}, obj={}", joinPoint.getSignature(),
+obj.getClass());
+}
+@Before("allMember() && target(obj)")
+public void targetArgs(JoinPoint joinPoint, MemberService obj) {
+log.info("[target]{}, obj={}", joinPoint.getSignature(),
+obj.getClass());
+}
+@Before("allMember() && @target(annotation)")
+public void atTarget(JoinPoint joinPoint, ClassAop annotation) {
+log.info("[@target]{}, obj={}", joinPoint.getSignature(),
+annotation);
+}
+@Before("allMember() && @within(annotation)")
+public void atWithin(JoinPoint joinPoint, ClassAop annotation) {
+log.info("[@within]{}, obj={}", joinPoint.getSignature(),
+annotation);
+}
+@Before("allMember() && @annotation(annotation)")
+public void atAnnotation(JoinPoint joinPoint, MethodAop annotation) {
+log.info("[@annotation]{}, annotationValue={}",
+joinPoint.getSignature(), annotation.value());
+}
+}
+```
+`logArgs1` : `joinPoint.getArgs()[0]` 와 같이 매개변수를 전달 받는다.  
+`logArgs2` : `args(arg,..)` 와 같이 매개변수를 전달 받는다.  
+`logArgs3` : `@Before` 를 사용한 축약 버전이다. 추가로 타입을 `String` 으로 제한했다.  
+`this` : 프록시 객체를 전달 받는다.  
+`target` : 실제 대상 객체를 전달 받는다.  
+`@target` , `@within` : 타입의 애노테이션을 전달 받는다.  
+`@annotation` : 메서드의 애노테이션을 전달 받는다. 여기서는 `annotation.value()` 로 해당 애노테이션의 값을 출력하는 모습을 확인할 수 있다.  
+
+#### this, target
+
+**정의**
+`this` : 스프링 빈 객체(스프링 AOP 프록시)를 대상으로 하는 조인 포인트  
+`target` : Target 객체(스프링 AOP 프록시가 가리키는 실제 대상)를 대상으로 하는 조인 포인트  
+
+**설명**
+`this` , `target` 은 다음과 같이 적용 타입 하나를 정확하게 지정해야 한다.  
+
+```java
+this(hello.aop.member.MemberService)
+target(hello.aop.member.MemberService)
+
+* 같은거 불가, 부모타입은 허용
+```
+
+**주의점**  
+두개를 사용하는데 조금 다른부분이 있는데  
+`this` 는 스프링 빈으로 등록되어 있는 **프록시 객체**를 대상으로 포인트컷을 매칭한다.  
+`target` 은 실제 **target 객체**를 대상으로 포인트컷을 매칭한다.  
+
+이는 스프링 AOP에서 JDK동적프록시를 쓰냐, CGLIB를 쓰냐에 따라서 결과가 다르게 나올 수 있다.
+
+**JDK**  
+
+상황 : service(인터페이스) -> serviceImpl(상속받아만든클래스)  
+스프링빈 : **인터페이스 상속받은 사용한프록시** , (serviceImpl존재여부도 모름)  
+
+target을 사용하면 `상황 : service(인터페이스) -> serviceImpl(상속받아만든클래스)`이쪽의 객체를 보면  
+`@Around("target(hello.aop.member.MemberService)")`
+`@Around("target(hello.aop.member.MemberServiceImpl)")`
+뭘하든 적용이 된다.
+
+하지만 this를 사용하면 `스프링빈 : **인터페이스 상속받은 사용한프록시** , (serviceImpl존재여부도 모름)` 이 상황이기 때문에
+`@Around("this(hello.aop.member.MemberService)")` (`**스프링빈 : **인터페이스 상속받은 사용한프록시**` 인터페이스는 OK)
+`@Around("this(hello.aop.member.MemberServiceImpl)")` (???? `MemberServiceImpl` 아에 모름)  적용 x  
+
+가장 아래 코드는 적용이 되지않는다.  
+
+**CGLIB**  
+
+상황 : service(인터페이스) -> serviceImpl(상속받아만든클래스)  
+스프링빈 : **serviceImpl을 상속받은 프록시** , (프록시 -> `serviceImpl` -> service(인터페이스) 거슬러 올라가며 확인가능)  
+
+`@Around("target(hello.aop.member.MemberService)")`  
+`@Around("target(hello.aop.member.MemberServiceImpl)")`  
+둘다 적용  
+
+`@Around("this(hello.aop.member.MemberService)")` (`**스프링빈 : **인터페이스 상속받은 사용한프록시**` 인터페이스는 OK)  
+`@Around("this(hello.aop.member.MemberServiceImpl)")` (프록시 -> `serviceImpl` -> service(인터페이스)) 프록시의 부모가 `serviceImpl`이라 확인가능  
+
+
+여담
+```java
+/**
+* application.properties
+* spring.aop.proxy-target-class=true CGLIB
+* spring.aop.proxy-target-class=false JDK 동적 프록시
+*/
+@Slf4j
+@Import(ThisTargetTest.ThisTargetAspect.class)
+@SpringBootTest(properties = "spring.aop.proxy-target-class=false") //JDK 동적 프록
+시
+//@SpringBootTest(properties = "spring.aop.proxy-target-class=true") //CGLIB
+public class ThisTargetTest {
+```
+기본 스프링의 프록시는 모두 CGLIB로 만들어지는데 기본적으로 properties파일 설정으로 기본값을 변경할 수 있다.  
+하지만 프로젝트 전체에서 변경하고 테스트하는건 번거롭기때문에 test 클래스에 어노테이션을 붙어주는거로 테스트할때만 변경할 수 있다.  
+참고로 JDK 동적 프록시로 설정해도 인터페이스가 아에 없는건 CGLIB로 생성된다.  
