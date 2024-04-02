@@ -1548,3 +1548,428 @@ public class ThisTargetTest {
 기본 스프링의 프록시는 모두 CGLIB로 만들어지는데 기본적으로 properties파일 설정으로 기본값을 변경할 수 있다.  
 하지만 프로젝트 전체에서 변경하고 테스트하는건 번거롭기때문에 test 클래스에 어노테이션을 붙어주는거로 테스트할때만 변경할 수 있다.  
 참고로 JDK 동적 프록시로 설정해도 인터페이스가 아에 없는건 CGLIB로 생성된다.  
+
+---
+## 20240403  
+### DB 파티셔닝
+
+#### DB 파티셔닝이란
+
+* 서비스가 커지면 데이터가 대용량화되면서 DB시스템의 용량과 성능 한계가 생기게 됩니다.
+* 이런 이슈를 해결하기 위해서 `table`을 파티션 단위로 나누어 관리하는 파티셔닝 기법이 나타나게 됩니다.
+* 즉 큰 `table`을 파티션이라는 작은 단위로 분리하는것을 말합니다.
+
+**장점**
+* 특정DML 쿼리성능 향상
+* 대용량 Data WRITE환경
+* Full Scan에서 범위축소
+* OLTP(온라인트랜랙션) 에서 INSERT 작업을 파티션단위로 분산시켜 경합감소
+
+* 회손가능성감소
+* 파티션별 독립적 백업, 복구 가능
+* table의 partition 단위로 Disk I/O을 분산하여 경합을 줄이기 때문에 UPDATE 성능을 향상
+* 관리가 용의
+
+**단점**
+* table간 JOIN비용 증가
+* table과 index를 별도로 파티셔닝할 수 없음 (같이 해야함)
+
+#### DB 파티셔닝의 종류
+
+**수평 파티셔닝**
+![1](https://github.com/299unknown/diary/assets/151738362/9e1d2abf-4cf4-4943-9e23-9784fa3ab9d9)
+
+하나의 테이블의 각 행을 다른 테이블에 분산시키는 것입니다.
+
+* 샤딩과 동일한 개념
+* 가장 일반적인 파티셔닝
+* KEY를 기반으로 분산저장
+
+* 장점
+	* 데이터 개수가 작아지고 index개수도 작아지기 때문에 성능향상
+	* 데이터 개수 기준 파티셔닝
+
+* 단점
+	* 서버 연결과정 많아짐
+ 	* 데이터를 찾는 과정이 기존보다 복잡하기 때문에 latency증가
+  * 하나의 서버가 고장나면 데이터 무결성 깨질 수 있음
+
+**수직 파티셔닝**
+![1](https://github.com/299unknown/diary/assets/151738362/57b460f1-2e59-4b46-a9af-8c798436dcb4)
+
+테이블의 일부 열을 빼내는 형태로 분할합니다.
+
+* 관계형 DB에서 3정규화와 같은 개념으로 접근하면 이해하기 쉬움
+* 하지만 수직 파티셔닝은 이미 정규화된 데이터를 분리하는 과정
+* 예) 유저의 주소를 보안이슈등으로 CustomerId를 참조하여 다른 테이블 분리
+
+* 장점
+	* 자주 사용하는 컬럼 등을 분리시켜 성능을 향상시킬 수 있음
+	* I/O 측면에서 봤을 때 필요한 컬럼만 올리면 훨씬 많은 수의 ROW를 메모리에 올릴 수 있으니 성능상의 이점이 있음
+	* 데이터 타입끼리 파티셔닝하게되면 저장시 데이터 압축률 높일 수 있음
+ 
+#### DB 파티셔닝 분할 기준
+
+데이터베이스 관리 시스템은 분할에 대해 각종 기준(분할 기법)을 제공하고 있다. 분할은 ‘분할 키(partitioning key)’를 사용합니다.
+
+![1](https://github.com/299unknown/diary/assets/151738362/50d0bc68-3899-439f-a0c8-9f86817c8156)
+
+* 범위 분할 (range partitioning)
+	* 분할 키 값이 범위 내에 있는지 여부로 구분한다.
+	* 예를 들어, 우편 번호를 분할 키로 수평 분할하는 경우이다.
+
+* 목록 분할 (list partitioning)
+	* 값 목록에 파티션을 할당 분할 키 값을 그 목록에 비추어 파티션을 선택한다.
+	* 예를 들어, Country 라는 컬럼의 값이 Iceland , Norway , Sweden , Finland , Denmark 중 하나에 있는 행을 빼낼 때 북유럽 국가 파티션을 구축 할 수 있다.
+
+* 해시 분할 (hash partitioning)
+	* 해시 함수의 값에 따라 파티션에 포함할지 여부를 결정한다.
+	* 예를 들어, 4개의 파티션으로 분할하는 경우 해시 함수는 0-3의 정수를 돌려준다.
+
+* 합성 분할 (composite partitioning)
+	* 상기 기술을 결합하는 것을 의미하며, 예를 들면 먼저 범위 분할하고, 다음에 해시 분할 같은 것을 생각할 수 있다.
+	* 컨시스턴트 해시법은 해시 분할 및 목록 분할의 합성으로 간주 될 수 있고 키 공간을 해시 축소함으로써 일람할 수 있게 한다.
+
+#### MySQL Partition종류
+* Range
+> 범위를 기반으로 파티션을 나누는 형식이다.
+> Range Partition은 날씨 기반 데이터가 누적되고 날짜에 따라 분석 삭제할 경우, 범위 기반으로 데이터를 여러 파티션에 균등하게 나눌 수 있는 경우, 대량의 과거 데이터 삭제 같은 경우에 사용한다.
+> Range Partition에서 null은 어떤 값 보다 작은 값으로 취급되기 때문에 컬럼에 null인 데이터가 insert 된다면 가장 작은 값을 저장하는 파티션에 저장된다.
+
+```sql
+CREATE TABLE test (
+    id INT NOT NULL,
+    lname VARCHAR(30),
+    datt DATE NOT NULL DEFAULT '2000-01-01',
+    separated DATE NOT NULL DEFAULT '9999-12-31',
+    store_id INT NOT NULL
+) PARTITION BY RANGE (YEAR(datt)) (
+    PARTITION p0 VALUES LESS THAN (2020) ,
+    PARTITION p1 VALUES LESS THAN (2021) ,
+    PARTITION p2 VALUES LESS THAN (2022) ,
+    PARTITION p3 VALUES LESS THAN MAXVALUE
+    );
+```
+연도를 범위를 기준으로 파티션을 생성한 것이다.
+
+* List
+> List Partition은 RangePartition과 비슷하고,코드나 카테고리 등 특정 값을 기반으로 파티션을 나눈다.
+> List Partition은 파티션 키 값이 코드 값이나 카테고리와 같이 고정 값일 경우에 사용하고 파티션 키 값을 기준으로 레코드 건수가 균일하고 검색 조건에 파티션 키가 자주 사용되는 경우에 사용한다.
+>List는 Range와 다르게 null을 명시할 수 있지만, MAXVALUE는 지정할 수 없다.
+
+```sql
+CREATE TABLE test (
+    id INT NOT NULL,
+    name VARCHAR(30),
+    datt DATE NOT NULL DEFAULT '2000-01-01',
+    separated DATE NOT NULL DEFAULT '9999-12-31',
+    job_code INT NOT NULL,
+    store_id INT NOT NULL
+) PARTITION BY LIST (job_code) (
+    PARTITION p0 VALUES IN (2) ,
+    PARTITION p1 VALUES IN (1,9) ,
+    PARTITION p2 VALUES IN (3,6,7) ,
+    PARTITION p3 VALUES IN (4,5,8, NULL)
+    );
+```
+
+* Hash
+> Hash Partition은 Hash 함수에 의해 레코드가 저장될 파티션을 결정하는 방식이다.
+> Hash Partition은 테이블의 모든 레코드가 비슷한 사용빈도를 보이지만 너무 커서 파티션이 필요한 경우 사용된다.
+
+```sql
+CREATE TABLE test (
+    id INT NOT NULL,
+    name VARCHAR(30),
+    datt DATE NOT NULL DEFAULT '2000-01-01',
+    separated DATE NOT NULL DEFAULT '9999-12-31',
+    job_code INT NOT NULL,
+    store_id INT NOT NULL
+) PARTITION BY HASH (id)
+PARTITIONS 4;
+```
+
+* Key
+> 파티션 키 값을 MD5 함수를 이용하여 계산한 후 MOD 연산하여 파티션에 분배하는 방식. 정수 타입 외에 다른 데이터 타입들을 파티션 키로 사용할 수 있다는 것이 해시 파티션과의 차이점이다.
+
+```sql
+CREATE TABLE employees(
+	id INT NOT NULL,
+	...
+) PARTITION BY KEY() PARTITIONS 4;
+```
+
+
+#### MySQL Partition
+
+연월 별 데이터를 나누고 싶다면 아래와 같이 정의할 수 있습니다.
+
+```sql
+mysql> CREATE TABLE users (
+    user_id INT NOT NULL, 
+    reg_at DATETIME NOT NULL,
+    ...
+    PRIMARY KEY(user_id, reg_at)
+) PARTITION BY RANGE (TO_DAYS(reg_at)) (
+	PARTITION P_202206 VALUES LESS THAN (TO_DAYS('2022-07-01')),
+	PARTITION P_202207 VALUES LESS THAN (TO_DAYS('2022-08-01')),
+	PARTITION P_202208 VALUES LESS THAN (TO_DAYS('2022-09-01')),
+	PARTITION P_maxvalue VALUES LESS THAN MAXVALUE
+);
+```
+`PRIMARY KEY(user_id, reg_at)`여기서 파티션을 할 컬럼은 PRIMARY KEY로 등록되어야 합니다.   
+참고로, 파티션은 동일한 테이블의 형식으로 나눌 뿐, 파티션 별 다른 형태를 갖지 않습니다.  
+가령 각각 다른 인덱스를 생성하는 등의 형태는 지원하지 않습니다.  
+
+users 테이블은 reg_at 칼럼에서 TO_DAYS( ) 라는 MySQL 내장 함수를 이용해 날짜만 추출하고, 그 날짜를 이용해 테이블을 연도 범위별로 파티션합니다.  
+
+(mysql 내장함수들)
+```sql
+ABS(), CEILING(), EXTRACT(), FLOOR(), MOD(),
+DATEDIFF(), DAY(), DAYOFMONTH(), DAYOFWEEK(), DAYOFYEAR(), HOUR(), MICROSECOND(), MINUTE(),
+MONTH(), QUARTER(), SECOND(), TIME_TO_SEC(), TO_DAYS(), TO_SECONDS(), UNIX_TIMESTAMP(),
+WEEKDAY(), YEAR(), YEARWEEK()
+```
+
+**1. PARTITION BY RANGE ( ... )**  
+RANGE 기반의 파티셔닝을 한다는 의미입니다.  
+RANGE 이외에도 LIST, HASH, KEY Partition 이 존재합니다.  
+ 
+**2. TO_DAYS(reg_at)**  
+Partition Key로 사용할 컬럼을 지정합니다.  
+예시에서는 reg_at 컬럼을 지정했는데, 하나 이상의 컬럼이 Partition Key가 될 수 있습니다.  
+TO_DAYS는 날짜 데이터를 정수형으로 변환시키기 위한 MySQL 내장함수입니다.  
+내장 함수는 지난 포스팅의 Function 섹션을 참고해주세요.  
+   
+**3. PARTITION  VALUES LESS THAN (TO_DAYS('2022-07-01'))**  
+파티셔닝을 진행할 기준 값들을 정의합니다.  
+정의한 값을 기준으로 데이터를 삽입하고 조회하는 검색 시점의 기준 값이 됩니다.  
+이 기준 값에 따라 데이터가 저장되기 때문에 데이터가 모든 파티션에 골고루 퍼지도록 잘 정의해야 합니다.  
+   
+**4. PARTITION P_maxvalue VALUES LESS THAN MAXVALUE**  
+마지막 구문인 MAXVALUE 는 만약 정의한 날짜 값 그 이외의 값이 삽입될 때를 대비합니다.  
+위의 예시에서 2022년 10월의 데이터, 혹은 그 이후의 들어온다면 처리되지 못하니, maxvalue 파티션에 추가하라는 의미입니다.  
+-MAXVALUE <= intval <= MAXVALUE  
+   
+위와 같은 범위를 갖습니다.  
+
+
+![1](https://github.com/299unknown/diary/assets/151738362/ae3a5e2d-dc8d-4902-9619-993a7cbd3012)
+실제 데이터들은 파일로 관리되며, my.conf 내에 정의된 데이터 저장 위치에서 확인이 가능하죠.  
+파티션 데이터는 <table_name>#P#<partition_name>.ibd 형식으로 나눠집니다.   
+파티션 설명 중 논리적으로는 하나의 테이블과 같은데 물리적으로 분리된 구조라는 의미라는것이 이런 의미 입니다.  
+
+**Alter Exist Table**
+혹은 기존의 테이블을 파티셔닝할 수 있습니다. 
+형식은 거의 동일합니다.
+
+```sql
+CREATE TABLE mirrorline.users_after (
+  `user_id` INT NOT NULL AUTO_INCREMENT,
+  `email` VARCHAR(100) NOT NULL,
+  `name` VARCHAR(15) NOT NULL,
+  `age` INT NOT NULL,
+  `reg_at` DATETIME NOT NULL,
+  PRIMARY KEY (`user_id`, `reg_at`)
+);
+```
+기본 테이블이 이렇게 존재할때
+
+```sql
+ALTER TABLE users_after PARTITION BY RANGE (TO_DAYS(reg_at)) (
+	PARTITION P_202206 VALUES LESS THAN (TO_DAYS('2022-07-01')),
+	PARTITION P_202207 VALUES LESS THAN (TO_DAYS('2022-08-01')),
+	PARTITION P_202208 VALUES LESS THAN (TO_DAYS('2022-09-01')),
+	PARTITION P_maxvalue VALUES LESS THAN MAXVALUE
+);
+```
+파티션을 추가합니다. 참고로, 데이터가 존재할 때에도 파티션으로 나눌 수 있습니다. 다만, 데이터가 많을 경우에 서비스되고 있는 테이블을 나누려면 부하가 크게 갈테니 주의하세요.  
+
+**Partition 확인**
+```sql
+SELECT PARTITION_NAME,TABLE_ROWS
+FROM INFORMATION_SCHEMA.PARTITIONS
+WHERE TABLE_NAME = 'users';
+```
+<img width="549" alt="1" src="https://github.com/299unknown/diary/assets/151738362/6cc88b49-3522-46c6-8a7f-e5741ec93c1c">
+  
+모든 파티션과 해당 파티션에 데이터가 얼마나 존재하는지 확인할 수 있는 쿼리입니다.  
+TABLE_ROWS는 SQL 옵티마이저의 최적화를 위한 추정값이기 때문에 항상 정확하지 않습니다.  
+
+
+**예시**
+
+```sql
+INSERT INTO users(email, name, age, reg_at) 
+VALUES('gngsn@gmail.com', 'gngsn', 25, '2022-12-23 12:02:28');
+```
+
+이런 값을 추가하면 
+
+<img width="619" alt="1" src="https://github.com/299unknown/diary/assets/151738362/3f7b45e4-ada5-4f29-b564-09da50d2a786">
+
+`p_maxvalue`쪽으로 자동으로 파티셔닝되게 됩니다.
+
+**DROP**
+```sql
+ALTER TABLE users DROP PARTITION P_202207;
+```
+
+파티션을 제거하고 싶다면 아래와 같은 쿼리를 입력하면 됩니다.  
+그럼, 기존 P_202206 파티션에 저장된 데이터들은 파티션과 함께 삭제됩니다.  
+
+**SELECT**
+
+```sql
+SELECT * FROM users PARTITION (P_202207);        
+SELECT * FROM users PARTITION (P_maxvalue);
+```
+이런식으로 파티션 하나만 조회할수도있습니다.  
+`EXPLAN`으로 확인해보면 특정 파티션만 검색한것을 확인할 수 있습니다.  
+
+**병합**
+```sql
+ALTER TABLE test 
+REORGANIZE PARTITION p2,p3 INTO (
+PARTITION p23 VALUES LESS THAN (2020)
+);
+```
+
+
+**성능고려주의점**
+파티션을 사용하면 성능이 오히려 떨어질 수 있습니다.
+데이터 검색을 먼저 구분해보자면, WHERE 절의 조건으로 아래와 같은 사항을 따져볼 수 있습니다.
+* 검색할 파티션을 찾을 수 있는지
+* 인덱스를 효율적으로 사용할 수 있는지 (Index Range Scan)
+
+* 파티션 선택 O, 인텍스 효율 O
+	* 이때는 파티션의 개수와 관계없이 검색을 위해 꼭 필요한 파티션의 Index Range Scan하는 경우를 의미합니다. 두 조건이 모두 가능할 때 쿼리가 가장 효율적으로 처리될 수 있습니다.
+
+* 파티션 선택 X, 인덱스 효율 O
+	* 이 경우 우선 테이블의 모든 파티션을 대상으로 검색해야 하지만, 각 파티션에 Index Range Scan을 사용할 수 있습니다.
+	* 최종적으로 테이블에 존재하는 모든 파티션의 개수만큼 Index Range Scan 검색 하게 됩니다. 
+	* 이 작업은 파티션 개수만큼의 테이블에 대해 인덱스 레인지 스캔을 한 다음, 결과를 병합해서 가져오는 것과 같습니다.
+
+* 파티션 선택 O, 인덱스 효율 X
+	* 인덱스는 이용할 수 없어서 대상 파티션에 대해 Full Table Scan 하기 때문에, 각 파티션의 레코드 건수가 많다면 상당히 느리게 처리됩니다.
+
+* 파티션 선택 X, 인텍스 효율 X
+	* 테이블의 모든 파티션을 검색해야 하고 각 파티션에서도 Full Table Scan을 수행해야 합니다. 최악의 경우 입니다.
+
+
+`파티션 선택 O, 인덱스 효율 X`, `파티션 선택 X, 인텍스 효율 X`의 경우 파티션을 지양하는것이 좋습니다.  
+
+
+#### 특징
+
+**INSERT**
+![1](https://github.com/299unknown/diary/assets/151738362/55932079-8019-4bfe-9b11-2bb62fdb0764)
+* Partition을 통해 데이터를 조회할 때는 파티션 키로 정한 데이터를 기준으로 파티션이 결정한 후, 파티션이 결정되면 나머지 과정은 파티션되지 않은 일반 테이블과 동일하게 처리됩니다.
+* 최대한 파티션 키를 통해 데이터를 찾을 수 있게끔 조건을 걸어주는 것을 권장드립니다. 
+
+**UPDATE**
+![1](https://github.com/299unknown/diary/assets/151738362/209015b6-56b9-4c48-829b-4722586b6622)
+데이터를 변경할 때는 파티션 키를 변경하는지 아닌지로 구분해서 설명할 수 있습니다.
+
+* 파티션 키 외의 데이터 수정 : 먼저, 파티션 키 외의 데이터가 수정될 때에는 파티션이 적용되지 않은 일반 테이블과 마찬가지로 칼럼 값만 변경하면 됩니다.
+* 파티션 키 칼럼이 변경될 때 : 아래와 같이 기존의 레코드가 저장된 파티션에서 해당 레코드를 삭제합니다. 그리고 변경되는 파티션 키 칼럼의 표현식을 평가한 후,그 결과를 이용해 레코드를 이동시킬 새로운 파티션을 결정해서 레코드를 새로 저장합니다.
+
+**Index**
+![1](https://github.com/299unknown/diary/assets/151738362/d233bfb7-b1a2-47ec-a673-423362c0c81b)
+모든 인덱스는 파티션 단위로 생성됩니다.  
+MySQL의 파티션 테이블에서 인덱스는 전부 로컬 인덱스로, 테이블 단위의 글로벌한 인덱스는 지원하지 않습니다.  
+
+파티션되지 않은 테이블에서는 인덱스를 순서대로 읽으면 그 칼럼으로 정렬된 결과를 바로 얻을 수 있지만, 파티션된 테이블은 인덱스가 분리되어 있기 때문에 다르게 동작합니다.  
+
+일반 테이블의 인덱스 스캔처럼 결과를 바로 반환하는 것이 아니라, 여러 파티션에 대해 인덱스 스캔을 수행할 때 각 파티션으로부터  
+조건에 일치하는 레코드를 정렬된 순서대로 읽으면서 우선순위 큐(Priority Queue)에 임시로 저장하여 가져옵니다.  
+  
+각 파티션 에서 읽은 데이터가 이미 정렬되어 있기 파티션에 접근한 후 그 순서대로만 가져오며, 내부적으로 큐 처리를 합니다.  
+
+#### 성능 확인
+
+최적화 단계에서 필요한 파티션만 골라내고 불필요한 것 들은 실행 계획에서 배제, 옵티마이저가 다수의 파티션 중 일부만 읽어도 된다고 판단되면 불필요한 파티션에는 전혀 접근하지 않습니다.  
+
+```sql
+mysql> EXPLAIN SELECT * FROM users WHERE reg_at > '20220801' AND reg_at > '20220801';
++----+------------+------------+-------+---------+---------+------+--------------------------+
+| id | table      | partitions | type  | key     | key_len | rows | Extra                    |
++----+------------+------------+-------+---------+---------+------+--------------------------+
+|  1 | tb_article | P_202208      | index | PRIMARY | 9       |    1 | Using where; Using index |
++----+------------+------------+-------+---------+---------+------+--------------------------+
+```
+#### 참고자료
+https://gmlwjd9405.github.io/2018/09/24/db-partitioning.html  
+https://gngsn.tistory.com/203  
+https://gngsn.tistory.com/204?category=851218  
+
+
+---
+
+### DB seeding 초기 데이터
+
+#### 인트로 
+
+DB를 사용하다보면 초기 데이터가 필요한 경우가 있습니다. 테이블의 경우 ORM등의 기술이나 프로젝트의 엔티티등을 통해서 초기생성 가능하지만 초기 데이터 까지 추기하기 위해서는 seeding을 해주어야 합니다.
+
+#### 사용
+
+javascript 진영에서는 prisma ORM을 통해서 가능하다고 확인 했지만 지금 프로젝트에 맞는 Spring의 경우 보통 어떻게 진행하는지 알아보았습니다.
+
+일반적으로 프로젝트를 docker를 사용한 환경에서 사용하게 되는데 이때 docker-compose 파일 작성을 통해 미리 입력한 sql문들을 mysql이 시작될때 입력할 수 있습니다.
+
+```docker
+
+version: "3.8"
+services:
+  mysql:
+    container_name: mysql_local
+    image: mysql:8.0.30
+    volumes:
+      - ./db/conf.d:/etc/mysql/conf.d
+      - ./db/initdb.d:/docker-entrypoint-initdb.d
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_DATABASE=pass_local
+      - MYSQL_USER=pass_local_user
+      - MYSQL_PASSWORD=passlocal123
+      - MYSQL_ROOT_PASSWORD=passlocal123
+      - TZ=Asia/Seoul
+```
+
+**초기화 설정**
+처음 인스턴스를 생성할 때 추가적인 데이터베이스 초기화를 위해 실행할 .sh 또는 .sql 파일이 있다면, 컨테이너의 /docker-entrypoint-initdb.d 디렉토리에 해당 파일이 들어있는 디렉토리를 마운트 시켜주어야 한다. (파일명의 알파벳 순서로 실행)  
+
+
+```sql
+# ./db/initdb.d/create_table.sql
+
+CREATE TABLE `users`
+(
+    `user_id`  int         NOT NULL AUTO_INCREMENT COMMENT '유저 식별값',
+    `username` varchar(30) NOT NULL COMMENT '유저 로그인 아이디',
+    `password` varchar(50) NOT NULL COMMENT '유저 패스워드',
+    `created_at`   timestamp   NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성 일시',
+    `modified_at`  timestamp            DEFAULT NULL COMMENT '수정 일시',
+    PRIMARY KEY (`user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='유저';
+```
+이런식의 테이블생성 쿼리도 미리 직성할 수 있고
+
+```sql
+# ./db/initdb.d/insert_data.sql
+
+INSERT INTO `user` (username, password, create_at)
+VALUES ('user1', 'password1', '2022-08-01 00:00:00'),
+       ('user2', 'password2', '2022-08-01 00:00:00'),
+       ('user3', 'password3', '2022-08-01 00:00:00');
+
+...
+```
+seed 데이터를 넣을 수 있는 쿼리도 작성할 수 있습니다.
+
+
+#### 참고자료
+https://seungtaek-overflow.tistory.com/22  
+https://yoo-dev.tistory.com/14  
