@@ -1973,5 +1973,37 @@ seed 데이터를 넣을 수 있는 쿼리도 작성할 수 있습니다.
 https://seungtaek-overflow.tistory.com/22  
 https://yoo-dev.tistory.com/14  
 
+---
+
+## 20240305
+### 프로그래머스 올바른괄호 큐/스택 2단계
+
+'(' 또는 ')' 로만 이루어진 문자열 s가 주어졌을 때, 문자열 s가 올바른 괄호이면 true를 return 하고, 올바르지 않은 괄호이면 false를 return 하는 solution 함수를 완성해 주세요.  
+
+"()()" true  
+")()("false  
+
+```java
+import java.util.*;
+class Solution {
+    boolean solution(String s) {
+        Stack<Character> stack = new Stack<>();
+            for (int i = 0; i < s.length(); i++) {
+                if (s.charAt(i) == '(') {
+                    stack.push('(');
+                } else if (s.charAt(i) == ')') {
+                    if (stack.isEmpty()) {
+                        return false;
+                    }
+                    stack.pop();
+                }
+            }
+            return stack.isEmpty();
+    }
+}
+```
+스택에 넣는데 처음에 "("부터 넣으면서 ")"가 나오면 뺸다  
+이과정에서 스트링이 끝나기전에 스택이 비거나 "("가 남으면 실패  
+
 
 
