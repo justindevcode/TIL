@@ -2076,4 +2076,69 @@ public class Main {
 ```
 하 이 문제 어이없는게 테스트케이스중에 정렬이 안된것이 있다고 했다. 아무리봐도 친절하게 순서데로 나오는거같은데 진짜 너무한다. `Arrays.sort(lost);`이거 안해줘서 몇시간 고민함  
 
+---
 
+## 20240408  
+### 스프링 AOP 실전 예제
+
+실전에서 사용하는 AOP적용법을 간단하게 알아보자 
+
+EX 예외터지면 해당함수를 일정 횟수 반복하는 AOP
+
+```java
+@Target(ElementType.METHOD)
+@Retention(RetentionPolicy.RUNTIME)
+public @interface Retry {
+ int value() default 3;
+}
+```
+1. 붙여줄 어노테이션을 만들어준다.
+
+```java
+@Slf4j
+@Aspect
+public class RetryAspect {
+ 
+ @Around("@annotation(retry)")
+ public Object doRetry(ProceedingJoinPoint joinPoint, Retry retry) throws
+Throwable {
+ log.info("[retry] {} retry={}", joinPoint.getSignature(), retry);
+ int maxRetry = retry.value();
+ Exception exceptionHolder = null;
+ for (int retryCount = 1; retryCount <= maxRetry; retryCount++) {
+ try {
+ log.info("[retry] try count={}/{}", retryCount, maxRetry);
+ return joinPoint.proceed();
+ } catch (Exception e) {
+ exceptionHolder = e;
+ }
+ }
+ throw exceptionHolder;
+ }
+}
+```
+2. 해당 어노테이션이 붙은 코드를 일정횟수 반복하게 하는 `@Aspect`를 만들어준다.
+
+```java
+@Repository
+public class ExamRepository {
+ @Trace
+ @Retry(value = 4)
+ public String save(String itemId) {
+ //...
+ }
+}
+```
+3. 사용할 함수에 붙여준다.
+
+```java
+@SpringBootTest
+@Import({TraceAspect.class, RetryAspect.class}) //TraceAspect.class이건 또다른 예시임
+public class ExamTest {
+}
+```
+4. Bean등록을 까먹지않는다.
+
+5. 사용해주면 끝
+
+이런식으로 어노테이션형식으로 `@Aspect`만 만들어준후 가져다 붙이고 Bean으로 등록만하면 끝이다.  
