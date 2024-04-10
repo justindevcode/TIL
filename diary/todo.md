@@ -2142,3 +2142,52 @@ public class ExamTest {
 5. 사용해주면 끝
 
 이런식으로 어노테이션형식으로 `@Aspect`만 만들어준후 가져다 붙이고 Bean으로 등록만하면 끝이다.  
+
+---
+
+## 20240410
+### 알고리즘 프로그래머스 조이스틱 그리디 2단계  
+조이스틱으로 알파벳 이름을 완성하세요. 맨 처음엔 A로만 이루어져 있습니다. ex) 완성해야 하는 이름이 세 글자면 AAA, 네 글자면 AAAA  조이스틱을 각 방향으로 움직이면 아래와 같습니다.  
+위 - 다음 알파벳  
+아래 - 이전 알파벳 (A에서 아래쪽으로 이동하면 Z로)  
+왼쪽 - 커서를 왼쪽으로 이동 (첫 번째 위치에서 왼쪽으로 이동하면 마지막 문자에 커서)  
+오른쪽 - 커서를 오른쪽으로 이동 (마지막 위치에서 오른쪽으로 이동하면 첫 번째 문자에 커서)  
+
+만들고자 하는 이름 name이 매개변수로 주어질 때, 이름에 대해 조이스틱 조작 횟수의 최솟값을 return 하도록 solution 함수를 만드세요.  
+
+ex "JEROEN" 56  
+
+```java
+import java.util.*;
+class Solution {
+    public int solution(String name) {
+        int answer = 0;
+        int length = name.length();
+
+        int index; // 다음 값들을 확인할 때 사용
+        int move = length - 1; // 좌우 움직임 수를 체크
+
+        for(int i = 0; i < name.length(); i++){
+            answer += Math.min(name.charAt(i) - 'A', 'Z' - name.charAt(i) + 1);
+
+            index = i + 1;
+            // 연속되는 A 갯수 확인
+            while(index < length && name.charAt(index) == 'A'){
+                index++;
+            }
+
+            // 순서대로 가는 것과, 뒤로 돌아가는 것 중 이동수가 적은 것을 선택
+            move = Math.min(move, i * 2 + length - index);
+            // 2022년 이전 테스트 케이스만 확인하면 여기까지해도 정답처리가 되기 때문에, 이전 정답들에는 여기까지만 정리되어 있지만,
+            // BBBBAAAAAAAB 와 같이, 처음부터 뒷부분을 먼저 입력하는 것이 더 빠른 경우까지 고려하려면 아래의 코드가 필요합니다.
+            move = Math.min(move, (length - index) * 2 + i);
+        }
+        return answer + move;
+    }
+}
+```
+위아래 계산은 어렵지않은데 앞으로갈지 뒤로갈지, 앞으로 갔다가 다시 되돌아와서 뒤로갈지 반대인지 이거 계산하는게 많이 어려웠다.  
+그래서 결국 답을 봤는데 처음 위아래 영어선택 계산과 더불어서 그 위치에서 `while`로 앞으로 중복되는 `A`의 개수를 찾고 그다음 그 위치에서 최적의 좌우 이동 계산하는 연산이  
+복합적으로 들어가는걸 생각하기 어려웠다.  
+
+2중 for문 이나 while생각하면 맨날 배열 2중으로 돌기만 생각했는데 좀더 넓게 생각해야겠다.  
