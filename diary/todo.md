@@ -2191,3 +2191,38 @@ class Solution {
 복합적으로 들어가는걸 생각하기 어려웠다.  
 
 2중 for문 이나 while생각하면 맨날 배열 2중으로 돌기만 생각했는데 좀더 넓게 생각해야겠다.  
+
+---
+
+## 20240411
+### 스프링 AOP 실무 주의사항 문제1  
+
+스프링 AOP의 첫번째 문제는 함수내부호출의 경우 이다.  
+
+```java
+public class CallServiceV0 {
+ public void external() {
+ log.info("call external");
+ internal(); //내부 메서드 호출(this.internal())
+ }
+ public void internal() {
+ log.info("call internal");
+ }
+}
+
+
+@Aspect
+public class CallLogAspect {
+ @Before("execution(* hello.aop.internalcall..*.*(..))")
+ public void doLog(JoinPoint joinPoint) {
+ log.info("aop={}", joinPoint.getSignature());
+ }
+}
+```
+`external`, `internal`모두 AOP로 프록시 등록해서 스프링 빈에는 둘의 프록시 객체가 등록되게된다.  
+하지만 `external`에서 함수 내부에서 자신의 클래스의 `internal`을 호출하게되면 스프링빈의 프록시 `internal`이 아니라 날것의 `this.internal`이 호출되기 때문에  
+`internal`에는 AOP가 적용이 되지않는 문제가 있다.  
+
+만약 AspectJ를 직접 사용하면 `public void internal()`함수에 코드안에 직접 코드를 쑤셔박아 넣는 방식을 사용할 수 있기때문에 이런 문제가 안생길 수 있지만 너무 복잡하기에 다른 해결책을 사용한다.  
+
+그해결책은 다음시간에  
