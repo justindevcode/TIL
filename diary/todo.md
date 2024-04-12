@@ -2283,3 +2283,966 @@ applicationContext.getBean(CallServiceV2.class);
  }
 ```
 스프링 빈 컨테이너에서 직접 꺼내쓰는 코드 방법이 있다. 너무 강제적으로 하는거같아서 좋지않다.  
+
+---
+## 20240413
+### 스프링 퍼시스턴스 개발 고민
+
+#### 인트로
+스프링에는 JDBC -> 하이버네이트 -> JPA,QueryDSL 등의 DB 연결과 쿼리사용의 기술들이 있습니다. 자바의 객체지향적은 부분과 RDB를 매칭하기위해 많은 노력과 기술들이 나왔는데요.  
+이런 많은 기술들을 어떻게 사용하는것이 올바른것인지 고민하게 되었습니다.  
+
+#### 배경
+기본적으로 JPA, QueryDSL 사용하게 되지만 어느선까지 기능을 이용하며 어떤 코드로 작성할것인가가 주요점입니다. 배경지식으로 영속성을 관리해주는 JPA부분만 조금 확인하고 넘어가겠습니다.  
+
+영속성 컨텍스트란?  
+ORM은 객체와 데이터베이스 테이블의 매핑을 통해 엔티티 클래스 객체 안에 포함된 정보를 테이블에 저장하는 기술이다.  
+JPA에서는 테이블과 매핑되는 엔티티 객체 정보를 영속성 컨텍스트를 통해 애플리케이션 내에서 오래 지속되도록 보관한다.  
+ 
+영속성 컨텍스트는 JPA를 이해하는데 가장 중요한 용어이다.  
+
+영속성 컨텍스트는 논리적인 개념  
+눈에 보이지 않음  
+엔티티 매니저를 통해 영속성 컨텍스트에 접근  
+
+ 
+엔티티의 생명주기  
+![1](https://github.com/witwint/TIL/assets/108222981/2b5feffe-4b72-4682-acde-e7d10680b056)
+
+* 비영속(new/transient) : 영속성 컨텍스트와 전혀 관계가 없는 새로운 상태
+* 영속(managed) : 영속성 컨텍스트에 관리되는 상태
+* 준영속(detached) : 영속성 컨텍스트에 저장되었다가 분리된 상태
+* 삭제(remove) : 삭제된 상태
+
+**비영속**
+
+객체를 생성한 상태
+```java
+Member member = new Member();
+member.setId("member1");
+member.setUsername("홍길동");
+```
+
+**영속**
+```java
+EntityManager em = EntityManagerFactory.createEntityManager();
+em.getTransaction().begin();
+
+Member member = new Member();
+member.setId("member1");
+member.setUsername("홍길동");
+
+// 객체를 영속성 컨텍스트에 저장(영속)
+em.persist(member);
+```
+
+**준영속**
+
+```java
+// member 엔티티를 영속성 컨텍스트에서 분리(준영속)
+em.detach(member);
+```
+
+**삭제**
+
+```java
+// 객체를 삭제한 상태(삭제)
+em.remove(member);
+```
+
+**영속성 상태의 장점**
+
+1차 캐시
+동일성(identity) 보장
+트랜잭션을 지원하는 쓰기 지연
+변경 감지
+지연 로딩
+
+
+영속성 컨텍스트(Persistence Context)를 그림으로 표현하면 다음과 같이 나타낼 수 있다.  
+![2](https://github.com/witwint/TIL/assets/108222981/1fcbdd54-1dad-4cd1-85ae-ad99d7e1e939)
+
+영속성 컨텍스트에는 1차 캐시 영역과 쓰기 지연 SQL 저장소 영역이 있다.  
+JPA API 중에서 엔티티 정보를 영속성 컨텍스트에 저장하는 API를 사용하면, 영속성 컨텍스트의 1차 캐시에 엔티티 정보가 저장된다.  
+
+```java
+// 엔티티를 생성한 상태(비영속)
+Member member = new Member();
+member.setId("member1");
+member.setUsername("홍길동");
+
+// 객체를 영속성 컨텍스트에 저장(영속)
+em.persist(member);
+```
+
+**엔티티 등록 - 쓰기 지연**
+엔티티 매니저는 데이터 변경 시 반드시 트랜잭션을 시작해야 한다.
+```java
+EntityManager em = EntityManagerFactory.createEntityManager();
+EntityTransaction tx = em.getTransaction(); // 트랜잭션
+
+// 트랜잭션 시작
+tx.begin();
+
+// 비영속
+Member member = new Member();
+member.setId("member1");
+member.setUsername("홍길동");
+
+// 영속
+em.persist(member);
+
+// 엔티티 등록
+tx.commit();
+```
+
+* em.persist(member); : member 엔티티를 영속 컨텍스트에 저장하지만, 데이터베이스에는 반영되지 않는다.
+* tx.commit(); : 트랜잭션을 커밋하는 순간 데이터베이스에 INSERT SQL을 보내 저장하게 된다.
+* persist()를 실행할 때, 영속 컨텍스트의 1차 캐시에는 member 엔티티가 저장되고, 쓰기 지연 SQL 저장소에는 member 엔티티의 INSERT SQL 쿼리문이 저장된다.
+* txcommit()을 실행하는 순간 쓰기 지연 SQL 저장소에 저장된 INSERT SQL 쿼리를 보내 데이터베이스에 저장하는 것이다.
+
+따라서, 여러 개의 엔티티를 생성하고 persist를 하더라도, commit()을 하기 전에는 데이터베이스에 저장되지 않는다. 이를 쓰기 지연이라 하며, 영속 컨텍스트의 장점이다.
+
+**엔티티 수정 - 변경 감지**
+```java
+EntityManager em = EntityManagerFactory.createEntityManager();
+EntityTransaction tx = em.getTransaction(); // 트랜잭션
+
+// 트랜잭션 시작
+tx.begin();
+
+// member 조회
+Member member = em.find(Member.class, "member");
+member.setUsername("hello");
+member.setAge("20");
+
+// 엔티티 등록
+tx.commit();
+```
+
+* 엔티티의 수정은 set메서드를 통해서 변경한 뒤, 별다른 로직 없이 트랜잭션 커밋을 하는 순간에 업데이트된다.
+* 이것이 가능한 이유는 바로 변경 감지(Dirty Checking) 기능을 제공하기 때문이다.
+* 영속 컨텍스트의 1차 캐시에는 member의 초기 데이터가 저장되어 있을 것이다.
+* 이후 set 메서드를 통해 데이터를 변경한다.
+* 트랜잭션 커밋 시 flush()가 발생하면서 1차 캐시에서 엔티티와 스냅샷을 비교하여 변경에 대한 감지를 한다.
+* 이후 SQL UPDATE 쿼리를 생성하여 쓰기 지연 SQL 저장소에서 쿼리를 보낸다.
+* 이로써 DB에 저장된 데이터를 수정하게 된다.
+
+**엔티티 삭제**
+```java
+Member member = em.find(Member.class, "member");
+
+em.remove(member); // 엔티티 삭제
+```
+
+* 엔티티 삭제는 remove() 메서드를 통해 데이터를 삭제할 수 있다.
+* 영속성 컨텍스트와 데이터베이스에서 모두 제거된다.
+
+**플러시 - flush()**
+트랜잭션 커밋을 실행하면 변경 내용을 데이터베이스에 반영하게 된다.
+트랜잭션 커밋이 일어날 때 플러시도 함께 발생하여 데이터베이스에 반영할 수 있는 것이다.
+즉, 플러시는 영속성 컨텍스트의 변경 내용을 데이터베이스에 반영하는 것이다.
+
+**플러시 발생 시**
+
+* 변경 감지(dirty checking)
+* 수정된 엔티티 쓰기 지연 SQL 저장소에 등록
+* 쓰기 지연 SQL 저장소의 쿼리를 데이터베이스에 전송(등록, 수정, 삭제 쿼리)
+
+**영속성 컨텍스트를 플러시 하는 방법**
+
+* em.flush() - 직접 호출(테스트에 사용)
+* tx.commit() - 트랜잭션 커밋을 통한 자동 호출
+* JPQL 쿼리 실행 - 플러시 자동 호출
+
+**플러시에 대한 오해**
+
+* 플러시는 영속성 컨텍스트를 비우지 않는다.
+* 영속성 컨텍스트의 변경 내용을 데이터베이스에 동기화하는 역할이다.
+* 플러시의 개념은 트랜잭션이라는 작업 단위에 중요 → 커밋 직전에만 동기화하면 된다.
+
+#### 엔티티에서 One To Many 단점
+
+**Article과 Image 엔티티**
+```java
+ @Entity
+    public class Article {
+
+        @Id
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private Long id;
+
+        @Column
+        private String content;
+
+        @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true) 
+        private List<Image> images = new ArrayList<>();
+
+        public void addImage(final Image image) {
+            images.add(image);
+        }
+    }
+```
+```java
+ @Entity
+    public class Image {
+
+        @Id
+        @GeneratedValue(strategy = GenerationType.IDENTITY)
+        private Long id;
+
+        @Column
+        private String url;
+
+    }
+```
+@OneToMany 단방향에서 따로 조인 설정을 넣어주지 않으면 단방향 @JoinTable이 적용됩니다.
+
+조인테이블 사용시 DB 예시
+![1](https://github.com/witwint/TIL/assets/108222981/61b34c00-d0a6-43a8-9861-7d4105eb6ad8)
+
+
+**저장로직, 결과**
+```java
+Article article = new Article("foo");
+
+    article.addImage(new Image("foo 1"));
+    article.addImage(new Image("foo 2"));
+    article.addImage(new Image("foo 3"));
+    article.addImage(new Image("foo 4"));
+
+    articleRepository.saveAndFlush(article);
+```
+```sql
+  Hibernate: insert into article (id, content) values (null, ?)
+
+    Hibernate: insert into image (id, url) values (null, ?)
+    Hibernate: insert into image (id, url) values (null, ?)
+    Hibernate: insert into image (id, url) values (null, ?)
+    Hibernate: insert into image (id, url) values (null, ?)
+
+    Hibernate: insert into article_images (article_id, images_id) values (?, ?)
+    Hibernate: insert into article_images (article_id, images_id) values (?, ?)
+    Hibernate: insert into article_images (article_id, images_id) values (?, ?)
+    Hibernate: insert into article_images (article_id, images_id) values (?, ?)
+```
+각 테이블을 저장후에 사이의 테이블의 값이 추가로 들어갑니다. 이 경우 1:N 관계 보다는 N:N 연관 처럼 보이며 매우 효율적이지 않습니다. 또 한 세 개의 테이블이 사용되므로 필요한 것보다 더 많은 공간을 사용하고 있습니다.  
+
+**삭제시 문제점**
+```java
+Image image = imageRepository.findById(1L).get();
+    imageRepository.delete(image);
+```
+```sql
+ PUBLIC.ARTICLE_IMAGES FOREIGN KEY(IMAGES_ID) REFERENCES PUBLIC.IMAGE(ID) (1)"; SQL statement:
+    delete from image where id=? [23503-199]
+```
+에러 발생! article_images(중간 테이블) 테이블에서 Image의 id를 외래키로 가지고 있기 때문에 제거가 불가능합니다.  
+Image를 삭제하는 방법은 Article의 Image List에서 remove 해줘야 합니다.  
+
+```java
+ Image image = imageRepository.findById(1L).get();
+    article.getImages().remove(image);
+    testEntityManager.flush();
+```
+```sql
+  Hibernate: delete from article_images where article_id=?
+    Hibernate: insert into article_images (article_id, images_id) values (?, ?)
+    Hibernate: insert into article_images (article_id, images_id) values (?, ?)
+    Hibernate: insert into article_images (article_id, images_id) values (?, ?)
+    Hibernate: delete from image where id=?
+```
+
+article_images 테이블 에서 article_id를 통해 모두 지운다.  
+지우려는 image를 제외한 나머지 image들을 article_images에 다시 저장한다. ->????????  
+지우려는 image를 테이블에서 삭제한다.  
+
+이유는 단방향 연결이기때문에 `article.getImages().remove(image);`이런 코드를 서용한후 하이버네이트가 `article`입장에서 `image`를 전혀 모르기때문에 일단 나의 `article`에 해당하는 중간 테이블의 레코드를 전부다 지우고 나서 다시 추가하는 방식으로 쿼리를 날리게 됩니다.  
+
+**@JoinColumn을 사용한 단방향 @OneToMany**
+```java
+public class Article{
+    ....
+
+    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true)
+    @JoinColumn(name="article_id")
+    private List<Image> images = new ArrayList<>();
+
+    ....
+```
+```sql
+ Hibernate: insert into article (id, content) values (null, ?)
+
+    Hibernate: insert into image (id, url) values (null, ?)
+    Hibernate: insert into image (id, url) values (null, ?)
+    Hibernate: insert into image (id, url) values (null, ?)
+    Hibernate: insert into image (id, url) values (null, ?)
+
+    Hibernate: update image set article_id=? where id=?
+    Hibernate: update image set article_id=? where id=?
+    Hibernate: update image set article_id=? where id=?
+    Hibernate: update image set article_id=? where id=?
+```
+@JoinColumn을 사용하면 image를 DB에 저장할 때, article_id를 모르기 때문에 먼저 저장한 후에 update문을 통해서 article_id를 한 번 더 실행합니다.  
+
+@JoinColumn사용시 DB  
+![1](https://github.com/witwint/TIL/assets/108222981/1054891a-c2e1-4264-adaf-0d060836bcce)
+
+**삭제**
+```sql
+    Hibernate: update image set article_id=null where article_id=? and id=?
+    Hibernate: delete from image where id=?
+```
+
+**OneToMany 양방향**
+```java
+@Entity
+public class Article{
+
+    @OneToMany(mappedBy = "article",cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Image> images = new ArrayList<>();
+
+    public void addImage(final Image image) {
+        images.add(image);
+        image.setArticle(this);
+    }
+
+    public void removeImage(final Image image){
+        images.remove(image);
+        image.setArticle(null);
+    }
+}
+
+@Entity
+public class Image {
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "article_id")
+    private Article article;
+
+      ...
+}
+```
+
+**저장**
+```sql
+Hibernate: insert into article (id, content) values (null, ?)
+Hibernate: insert into image (id, article_id, url) values (null, ?, ?)
+Hibernate: insert into image (id, article_id, url) values (null, ?, ?)
+Hibernate: insert into image (id, article_id, url) values (null, ?, ?)
+Hibernate: insert into image (id, article_id, url) values (null, ?, ?)
+```
+
+**삭제**
+```sql
+Hibernate: delete from image where id=?
+```
+
+딱 한 번씩, 간단하게 실행됩니다.  
+양방향을 하면 이렇게 편하고 사용함에 있어서도 편한데 왜 양방향을 사용하지 않고 @OneToMany 단방향을 생각했을까요?  
+객체는 가급적이면 단방향으로 해주는 게 좋습니다. 양방향으로 하면 신경써줘야 할 부분이 많죠.  
+
+의존성? A가 변경될 때 B도 함께 변경될 수 있다.  
+즉, 양방향은 관리가 어렵고 논리적으로 서로가 계속 변경합니다.  
+(A 변경 -> B 변경 -> A 변경...)  
+
+
+#### 양방향 연관관계 단점  
+데이터베이스에서는 외래 키(FK)를 이용해서 양방향으로 연관관계를 가질 수 있다. 아래의 두 가지 SQL문이 데이터베이스의 테이블은 외래 키(FK) 하나로도 양방향으로 동작할 수 있다는 예시이다.  
+```sql
+select * from Member m join Team t on m.team_id = t.team_id
+select * from Team t join Member m on m.team_id = t.team_id
+```
+
+하지만 객체는 그렇지 않다! 단방향 참조만이 가능하다. 그래서, 객체에서도 단방향 연관관계 2개(회원 -> 팀, 팀 -> 회원)를 만들어 양방향 연관관계 를 구현하는 것이다.  
+
+다만 구현에 주의할 점이 몇가지 있다.
+
+기본 엔티티
+```java
+@Entity
+public class Member {
+
+    @Id
+    @GeneratedValue
+    @Column(name = "member_id")
+    private Long id;
+    private String username;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "team_id")
+    private Team team;
+}
+
+...
+
+@Entity
+public class Team {
+
+    @Id
+    @GeneratedValue
+    @Column(name = "team_id")
+    private Long id;
+    private String name;
+
+    @OneToMany(mappedBy = "team")
+    private List<Member> members = new ArrayList<>();
+}
+```
+
+1. 양방향 등록 실수
+```java
+Team team = new Team("teamA");
+em.persist(team);
+
+Member member = new Member("member1");
+
+// 역방향만 연관관계 설정
+team.getMembers().add(member);
+
+em.persist(member);
+```
+이렇게 되면, 어떻게 될까?? 당연히 member 테이블의 team에 대한 외래 키(FK)는 null이 된다. 왜? 연관관계의 주인(Member)에서는 어떠한 작업도 해주지 않았기에 연관관계 설정이 된지 전혀 모르는 것이다.  
+
+2. (순수JPA)영속성 컨텍스트 초기화 안함
+```java
+  @Test
+    public void testEntity() {
+        Team teamA = new Team("teamA");
+        Team teamB = new Team("teamB");
+        em.persist(teamA);
+        em.persist(teamB);
+
+        Member member1 = new Member("member1", 10, teamA);
+        Member member2 = new Member("member2", 20, teamA);
+
+        Member member3 = new Member("member3", 30, teamB);
+        Member member4 = new Member("member4", 40, teamB);
+
+        em.persist(member1);
+        em.persist(member2);
+        em.persist(member3);
+        em.persist(member4);
+
+        // 초기화
+//        em.flush();
+//        em.clear();
+
+        List<Team> teams = em.createQuery("select t from Team t", Team.class)
+                .getResultList();
+
+        for (Team team : teams) {
+            System.out.println("team = " + team.getName());
+            for (Member member : team.getMembers()) {
+                System.out.println(" > member = " + member);
+            }
+        }
+
+    }
+```
+엔티티를 영속화시키고 영속성 컨텍스트를 비우지 않았다면, Team엔티티에 대한 정보가 영속성 컨텍스트에 계속 남아있으므로 영속성 컨텍스트 안의 Team 객체에 접근해서 List<Member> 변수로 연관관계를 가지는 Member객체들을 탐색한다.
+
+3. 지연로딩과 즉시로딩(N+1)문제
+
+**즉시로딩에서 N+1**
+1. EAGER(즉시 로딩)인 경우1. JPQL에서 만든 SQL을 통해 데이터를 조회
+2. 이후 JPA에서 Fetch 전략을 가지고 해당 데이터의 연관 관계인 하위 엔티티들을 추가 조회
+3. 2번 과정으로 N + 1 문제 발생
+
+**지연로딩에서의 N+1**
+1. JPQL에서 만든 SQL을 통해 데이터를 조회
+2. JPA에서 Fetch 전략을 가지지만, 지연 로딩이기 때문에 추가 조회는 하지 않음
+3. 하지만, 하위 엔티티를 가지고 작업하게 되면 추가 조회가 발생하기 때문에 결국 N + 1 문제 발생
+
+
+지연로딩상황
+
+```java
+// ========[페치 조인]=========
+Team teamA = new Team();
+teamA.setName("팀A");
+em.persist(teamA);
+
+Team teamB = new Team();
+teamB.setName("팀B");
+em.persist(teamB);
+
+Member member1 = new Member();
+member1.setUsername("회원1");
+member1.setTeam(teamA);
+em.persist(member1);
+
+Member member2 = new Member();
+member2.setUsername("회원2");
+member2.setTeam(teamA);
+em.persist(member2);
+
+Member member3 = new Member();
+member3.setUsername("회원3");
+member3.setTeam(teamB);
+em.persist(member3);
+
+em.flush();
+em.clear();
+
+String query = "select m from Member m";
+List<Member> result = em.createQuery(query, Member.class)
+        .getResultList();
+
+for (Member member : result) {
+    System.out.println("member = " + member.getUsername() + ", " + member.getTeam().getName());
+}
+```
+
+```sql
+Hibernate: 
+    /* select
+        m 
+    from
+        Member m */ select
+            member0_.MEMBER_ID as member_i1_5_,
+            member0_.age as age2_5_,
+            member0_.TEAM_ID as team_id4_5_,
+            member0_.username as username3_5_ 
+        from
+            Member member0_
+Hibernate: 
+    select
+        team0_.TEAM_ID as team_id1_11_0_,
+        team0_.createdBy as createdb2_11_0_,
+        team0_.createdDate as createdd3_11_0_,
+        team0_.lastModifiedBy as lastmodi4_11_0_,
+        team0_.lastModifiedDate as lastmodi5_11_0_,
+        team0_.name as name6_11_0_ 
+    from
+        Team team0_ 
+    where
+        team0_.TEAM_ID=?
+member = 회원1, 팀A
+member = 회원2, 팀A
+Hibernate: 
+    select
+        team0_.TEAM_ID as team_id1_11_0_,
+        team0_.createdBy as createdb2_11_0_,
+        team0_.createdDate as createdd3_11_0_,
+        team0_.lastModifiedBy as lastmodi4_11_0_,
+        team0_.lastModifiedDate as lastmodi5_11_0_,
+        team0_.name as name6_11_0_ 
+    from
+        Team team0_ 
+    where
+        team0_.TEAM_ID=?
+member = 회원3, 팀B
+```
+우선 지연로딩 방식으로 구현되어 있기 때문에, Member 엔티티를 조회하더라도 Team 엔티티는 프록시로 조회하게 된다. 그리고 Team 엔티티의 필드에 접근할 때 실제로 SQL문이 나가서 DB에 접근하게 된다.  
+
+
+* 회원1이 속한 팀인 팀A를 조회하면서 영속성 컨텍스트에 팀A를 저장해둔다.
+* 회원2가 속한 팀의 이름에 접근할 때, 영속성 컨텍스트에 있으므로 DB가 아닌 1차 캐시에서 조회된다.
+* 회원3이 속한 팀인 팀B는 영속성 컨텍스트에 존재하지 않아서, DB로 쿼리문을 날리게 된다.
+
+결론적으로, 쿼리가 총 3번 나가게 되었다. 이렇게 되면 관련된 엔티티의 데이터 개수만큼 쿼리가 나가서 의도치 않은 성능 저하를 야기할 수 있다.
+이 문제가 바로 N+1 문제 이다. N+1 문제를 해결하기 위해 페치 조인을 사용해야 한다.  
+
+```java
+// ..
+// Member, Team 세팅
+// ..
+
+em.flush();
+em.clear();
+
+String query = "select m from Member m join fetch m.team";
+List<Member> result = em.createQuery(query, Member.class)
+        .getResultList();
+
+for (Member member : result) {
+    System.out.println("member = " + member.getUsername() + ", " + member.getTeam().getName());
+}
+
+
+tx.commit();
+```
+
+```sql
+Hibernate: 
+    /* select
+        m 
+    from
+        Member m 
+    join
+        fetch m.team */ select
+            member0_.MEMBER_ID as member_i1_5_0_,
+            team1_.TEAM_ID as team_id1_11_1_,
+            member0_.age as age2_5_0_,
+            member0_.TEAM_ID as team_id4_5_0_,
+            member0_.username as username3_5_0_,
+            team1_.createdBy as createdb2_11_1_,
+            team1_.createdDate as createdd3_11_1_,
+            team1_.lastModifiedBy as lastmodi4_11_1_,
+            team1_.lastModifiedDate as lastmodi5_11_1_,
+            team1_.name as name6_11_1_ 
+        from
+            Member member0_ 
+        inner join
+            Team team1_ 
+                on member0_.TEAM_ID=team1_.TEAM_ID
+member = 회원1, 팀A
+member = 회원2, 팀A
+member = 회원3, 팀B
+```
+
+Member 엔티티들을 모두 조회하면서 한방쿼리로 연관된 엔티티인 Team 엔티티까지 조회하게 됐다. 즉, 페치 조인(Fetch join)을 이용해N+1 문제를 해결했다.   
+
+**컬렉션 페치 조인**
+
+일대다 관계에서 컬렉션 페치 조인을 하게 되면 어떻게 될까? 
+
+```java
+String query = "select t from Team t join fetch t.members";
+List<Team> result = em.createQuery(query, Team.class)
+        .getResultList();
+
+for (Team team : result) {
+    System.out.println("team = " + team.getName() + "|" + team.getMembers().size());
+}
+
+
+tx.commit();
+```
+```sql
+Hibernate: 
+    /* select
+        t 
+    from
+        Team t 
+    join
+        fetch t.members */ select
+            team0_.TEAM_ID as team_id1_11_0_,
+            members1_.MEMBER_ID as member_i1_5_1_,
+            team0_.createdBy as createdb2_11_0_,
+            team0_.createdDate as createdd3_11_0_,
+            team0_.lastModifiedBy as lastmodi4_11_0_,
+            team0_.lastModifiedDate as lastmodi5_11_0_,
+            team0_.name as name6_11_0_,
+            members1_.age as age2_5_1_,
+            members1_.TEAM_ID as team_id4_5_1_,
+            members1_.username as username3_5_1_,
+            members1_.TEAM_ID as team_id4_5_0__,
+            members1_.MEMBER_ID as member_i1_5_0__ 
+        from
+            Team team0_ 
+        inner join
+            Member members1_ 
+                on team0_.TEAM_ID=members1_.TEAM_ID
+team = 팀A|2
+team = 팀A|2
+team = 팀B|1
+```
+문제가 하나 있다! 왜 팀A가 2번 조회되지??  
+이것이 컬렉션 페치 조인에서 주의해야할 점이다! 일대다 조인은 뻥튀기(?)되는 문제가 발생할 수 있다. 즉, 같은 데이터가 중복 조회되는 문제가 있으니 주의해야한다.  
+
+> 일대다 조인에서의 중복 조회
+> 아래의 그림처럼 조회되는 것이다. 실제 팀A 데이터는 하나지만, 조회할 때 Member 엔티티와 조인되므로 중복 조회되는 문제가 발생하는 것이다. 실제 DB에서의 조인 실행 결과는 "[TEAM JOIN MEMBER]"와 같다.
+> 즉 Member 의 데이터가 다르게 조회됨으로써 다른 로우가 되지만, JPA에서 전체 필드가 아닌 부분적으로 조회한 결과는 같은 결과를 가지는 로우가 2개가 돼서, 중복 조회되는 것이다.
+> <img width="580" alt="1" src="https://github.com/witwint/TIL/assets/108222981/b38f23d7-ee84-403e-8975-b0f1487c8c66">
+
+**페치 조인과 DISTINCT**
+
+중복조회되는 문제를 해결하려면, DISTINCT 명령어를 활용해서 중복 로우를 제거해주면 된다.   
+<img width="508" alt="1" src="https://github.com/witwint/TIL/assets/108222981/f30de9eb-bf23-4e8d-a119-a4f93aa1ed12">
+
+하지만 위의 그림처럼 SQL을 실행했을 때, 서로가 다른 결과라고 하면 DISTINCT 명령어를 써도 제거되지 않는다.  
+즉, SQL에 DISTINCT 를 추가해도, 데이터가 다르므로 SQL 결과에서 중복 조회를 제거하는 데에 실패한다.  
+
+그래서, JPA에서는 DISTINCT가 DB에서 뿐만 아니라, 애플리케이션 레벨에서도 중복 제거를 시도한다.  
+즉, 같은 식별자를 가진 Team 엔티티를 삭제한다.   
+
+```java
+String query = "select distinct t from Team t join fetch t.members";
+List<Team> result = em.createQuery(query, Team.class)
+        .getResultList();
+
+for (Team team : result) {
+    System.out.println("team = " + team.getName() + "|" + team.getMembers().size());
+}
+```
+```sql
+Hibernate: 
+    /* select
+        distinct t 
+    from
+        Team t 
+    join
+        fetch t.members */ select
+            distinct team0_.TEAM_ID as team_id1_11_0_,
+            members1_.MEMBER_ID as member_i1_5_1_,
+            team0_.createdBy as createdb2_11_0_,
+            team0_.createdDate as createdd3_11_0_,
+            team0_.lastModifiedBy as lastmodi4_11_0_,
+            team0_.lastModifiedDate as lastmodi5_11_0_,
+            team0_.name as name6_11_0_,
+            members1_.age as age2_5_1_,
+            members1_.TEAM_ID as team_id4_5_1_,
+            members1_.username as username3_5_1_,
+            members1_.TEAM_ID as team_id4_5_0__,
+            members1_.MEMBER_ID as member_i1_5_0__ 
+        from
+            Team team0_ 
+        inner join
+            Member members1_ 
+                on team0_.TEAM_ID=members1_.TEAM_ID
+team = 팀A|2
+team = 팀B|1
+```
+정리하면, JPQL에서의 DISTINCT 명령어는 다음의 2가지 기능을 가진다.
+
+* SQL에 DISTINCT 추가
+* 애플리케이션에서 엔티티 중복 제거
+
+**페치 조인과 일반 조인의 차이**
+
+일반 조인을 실행할 때에는, 연관된 엔티티를 함께 조회하지 않는다. 하지만, 페치 조인을 실행하면 연관된 엔티티도 조회하게 된다.  
+
+무슨 말이냐하면, 페치 조인을 하게되면 연관된 엔티티의 로우에 대한 정보도 가져오게 되지만, 일반 조인을 하게 되면 select 절에 명시한 테이블 혹은 로우에 대한 정보만 가져오게 된다. 아래의 예시는 페치 조인과 일반 조인의 sql문이다. 차이를 확인해보시기 바랍니다.  
+
+```sql
+[일반 조인]
+select m from Member m join m.team
+
+[SQL문]
+select m.id, m.name, m.email from Member m
+inner join Team t on m.team_id = t.id
+
+[페치조인]
+select m from Member m join fetch m.team
+
+[SQL문]
+select m.id, m.name, m.email, t.id, t.name from Member m
+inner join Team t on m.team_id = t.id
+```
+
+select 절에서 가져오는 데이터가 다르다! 그렇기에 페치 조인을 활용하게 되면 지연 로딩으로 연관관계가 설정되어 있어도, 일반 조인과는 달리 다대일 관계 혹은 일대일 관계의 객체가 초기화될 수 있는 것이다!  
+
+**페치 조인과 JPQL**
+
+JPQL은 결과를 반환할 때 연관관계를 고려하지 않는다. 단지 Select 절에 지정된 엔티티만 조회할 뿐이다. 바로 위의 예제에서 일반 조인으로 실행하게 되면 Team 엔티티만 조회하게 되고, Member 엔티티는 조회하지 않는다.  
+
+다만, Fetch join 을 할 때에만 연관된 엔티티도 함께 조회한다(즉시 로딩). 페치 조인은 객체 그래프를 SQL 한 번에 조회하는 개념이다.   
+
+**둘 이상의 컬렉션은 페치 조인할 수 없다**
+
+Team 엔티티에 컬렉션 타입의 변수가 하나 더 있다고 가정할 때, 둘 이상의 컬렉션에 대해서도 페치 조인을 하게 되면 일대다대다 관계가 되므로 문제가 생길 수 있다.  
+컬렉션에 대해 페치 조인은 딱 하나만 지정할 수 있다.  
+
+**컬렉션을 페치 조인하면 페이징API(setFirstResult, setMaxResults) 를 사용할 수 없다**
+일대일, 다대일과 같은 단일 값 연관관계에서는 페치 조인해도 페이징이 가능하다.  
+일대다 관계에서는 중복 조회되는 문제(aka 뻥튀기?)가 있어서 이걸 페이징 처리하게 되면 의도한 결과가 나오지 않을 수 있다.  
+
+* 중복 조회되는 문제를 DB단에서만 처리하는 것이 아니라, 어플리케이션 단에서도 처리하기 때문이다.
+* 중복 조회된 결과가 2개일 때 페이지 사이즈가 1이라면, 중복 조회되는 문제가 발생한다.
+
+#### OneToOne의 단점
+
+OneToOne예시
+```java
+
+@Entity(name = "Team")
+@Getter
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
+public class Team {
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    @Column(name = "team_id")
+    private Long id;
+
+    private String teamName;
+}
+
+
+@Entity(name = "Member")
+@Getter
+@NoArgsConstructor
+public class Member {
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    @Column(name = "member_id")
+    private Long id;
+
+    private String name;
+
+    @OneToOne
+    @JoinColumn(name = "team_id")
+    private Team team;
+}
+```
+
+** OneToOne 은 즉시로딩인가 지연로딩인가**
+
+* @OneToOne 은 즉시 로딩이다.
+* FetchType을 LAZY로 변경해서 쓰기를 추천한다
+* 단방향 @OneToOne 관계에서는 지연로딩 적용에 문제가 없다
+* 양방향 @OneToOne 관계에서는 FetchType을 Lazy로 설정하더라도 Eager로 동작하는 경우가 있다.
+* 정확하게 말하면 @OneToOne 양방향 연관 관계에서 연관 관계의 주인이 아닌 쪽 엔티티를 조회할 때, Lazy로 동작할 수 없다.
+
+간략한 이유 : 아에 반대쪽의 존재를 알 수 있는 근거가 하나도 없어서 null로 표기가 되면서 지연로딩의 프록시가 null을 받게되는데 이는 오류가나게된다. `@OneToMany`는 Many 를 컬렉션으로 관리하기 때문에 null 을 표현할 방법이 있다(size) 즉 size = 0 이런값이라도 있다.  
+
+**@OneToOne 지연로딩 문제 해결책**
+
+
+* ptional=false 설정을 통해 무조건 Lazy Loading 을 시킨다. 이를 통해 반드시 연관 시 값이 존재함이 보장되어야 한다.
+	* PrimaryKeyJoin 의 경우에는 optional=false 일 경우에 데이터 저장 순서가 꼬여버린다. 정상적인 optional=false가 작동하려면 ForeignKey Join을 해야한다.
+* fetch join 으로 같이 가져와 해결 가능
+* 억지로 엔티티에 FK 롤 집어 넣어 해결
+* @ElementCollection 을 통해 컬렉션을 사용하고 unique 조건으로 데이터가 오직 1개만 들어가게 만든다.
+* OneToOne -> OneToMany + ManyToOne 분리 방법(좋은 방법은 아닌거 같다)
+
+
+#### QueryDSL
+Spring Data Jpa를 써보신 분들은 아시겠지만, 기본으로 제공해주는 @Query로는 다양한 조회 기능을 사용하기에 한계가 있습니다.   
+그래서 이 문제를 해결하기 위해 정적 타입을 지원하는 조회 프레임워크를 사용하는데요.  
+Querydsl은 Jooq와 함게 가장 유명한 조회 프레임워크입니다.  
+
+
+**동적쿼리에서의 장점예시**
+**JPQL**
+```java
+  @Query("select c from Consultation c join fetch c.hospital join fetch "
+        + "c.patient where c.idfConsultation = :id")
+  Optional<Consultation> findByIdWithHospital(@Param("id") long id);
+```
+
+**QueryDSL**
+```java
+@Override
+public Optional<Consultation> findByIdWithHospital(long id) {
+  return Optional.ofNullable(
+      queryFactory
+          .selectFrom(consultation)
+          .join(consultation.hospital).fetchJoin()
+          .where(consultation.idfConsultation.eq(id))
+          .fetchOne()
+  );
+}
+```
+
+간단 사용 예시
+각종 빌드설정을 해준후(상세한 내용은 참조블로그 참고)
+```
+@Repository
+public class AcademyRepositorySupport extends QuerydslRepositorySupport {
+    private final JPAQueryFactory queryFactory;
+
+    public AcademyRepositorySupport(JPAQueryFactory queryFactory) {
+        super(Academy.class);
+        this.queryFactory = queryFactory;
+    }
+
+    public List<Academy> findByName(String name) {
+        return queryFactory
+                .selectFrom(academy)
+                .where(academy.name.eq(name))
+                .fetch();
+    }
+
+}
+```
+이런식으로 `return queryFactory.selectFrom(academy).where(academy.name.eq(name)).fetch();`등의 sql과 유사한 내용을 자바코드로 사용할 수 있게됩니다.  
+* 문자가 아닌 코드로 쿼리를 작성할 수 있어 컴파일 시점에 문법 오류를 확인할 수 있다.
+* 인텔리제이와 같은 IDE의 자동 완성 기능의 도움을 받을 수 있다.
+* 복잡한 쿼리나 동적 쿼리 작성이 편리하다.
+* 쿼리 작성 시 제약 조건 등을 메서드 추출을 통해 재사용할 수 있다.
+* JPQL 문법과 유사한 형태로 작성할 수 있어 쉽게 적응할 수 있다.
+
+더불어서 보통 `QueryDSL`을 사용하면 
+
+```java
+@Autowired
+    private AcademyRepository academyRepository; //기존 data JPA
+
+    @Autowired
+    private AcademyRepositorySupport academyRepositorySupport; //QueryDSL용 클래스
+```
+이렇게 두개를 사용해야하는데 
+
+<img width="1401" alt="1" src="https://github.com/witwint/TIL/assets/108222981/3f6fb934-527f-45d1-a64d-c86dfa5dd0ff">
+이러한 방식으로 하나의 의존관계 주입으로도 둘다 사용할 수 있게 Spring Data Jpa가 지원해줍니다. (상세한 내용은 참조블로그 참고)  
+
+더불어서 `@QueryProjection`등 DB연결후 도메인객체를 뽑을때 바로 엔티티 자체가 아니라 설정 DTO로 변환해서 바로 가져올 수 있는 기능도 있습니다.
+
+```java
+@Data
+@NoArgsConstructor
+public class MemberDTO {
+	
+    private String username;
+    private int age;
+    
+    @QueryProjection
+    public MemberDTO(String username, int age) {
+    	
+        this.username = username;
+        this.age = age;
+    }
+}
+
+
+List<MemberDto> memberDtos = queryFactory
+
+	.select(new MemberDto(member.username, member.age))
+        .from(member)
+        .fetch();
+```
+**장점**
+* 다른 방식들과 달리, 이 방법은 컴파일시점에 필드 타입체크 등이 가능하기 때문에 안정적으로 코드를 작성할 수 있다.  
+
+**단점**
+* DTO의 경우 서비스, API 계층 등 여러 곳에서 사용될 수 있는데, DTO가 queryDsl에 의존하게 되면서 의존관계가 꼬일 수 있기 때문에, 상황에 따라 알맞게 사용해야 한다.
+
+우리프로젝트의 경우 리턴Respose
+
+**QueryDSL의 다양한 기능**
+https://velog.io/@bagt/QueryDsl-DTO-Projection  
+
+
+#### 그래서 어떻할 것이냐?
+
+JPA와 QueryDSL을 알아보면서 유의할점을 컴펙트하게 모아보겠습니다.  
+* One To Many 에서는 사용할거면 양방향 매핑을 해주는것이 좋습니다.
+* One To Many 양방향 매핑은 @JoinColumn을 사용하는것이 좋습니다.
+* 양방향 매핑은 순환참조를 주의해야합니다.
+* 양방향 매핑에서 영속성 컨텍스트와 실제 DB의 불일치를 주의해야합니다.
+* 주로 지연로딩을 사용하더라도 상황에따라 페치 조인을 사용하며 쿼리 효율을 높여줘야합니다.
+* 페치조인을 사용할때 실제 조인과 어떻게 다른지 알아야합니다.
+* JAP와, QueryDSL의 페치조인사용법도 익혀야합니다.
+* OneToOne의 특성 지연로딩에서의 프록시관계로인한 한계를 이해해야합니다.
+* 일단 JPQL과 QueryDSL의 사용법을 알아야합니다...
+* ...
+* ...
+추가요소 기타 등등.....
+
+개발자는 편하게 사용하고 싶지만 모든게 다 SQL 쿼리의 효율때문에 일어난 일 입니다. 편하기 사용하기 위함인데 점점 추상화 되면서 근본적인 sql이 어떻게 날라가는지 예상하기 어렵습니다.  
+물론 그렇다고 무조건 JDBC JdbcTempalte mybatis 옳냐 하면 사실 이런것들이 불편하기에 나온것이 JPA입니다.  
+그래서 정말 JDBC JdbcTempalte mybatis등 SQL중심으로 어떤 추상화 레벨에서 사용할것이냐? JPA, data JPA, QuertDSL 등을 어느 수준의 범위까지 쓸것이냐? 이런것들 모두 팀과 개인의 선택인거 같습니다.  
+
+
+
+
+
+
+
+
+
+
+https://dublin-java.tistory.com/51  
+https://velog.io/@ddangle/%EC%96%91%EB%B0%A9%ED%96%A5-%EC%97%B0%EA%B4%80%EA%B4%80%EA%B3%84%EC%9D%98-%ED%97%88%EC%A0%90  
+https://velog.io/@ddangle/%ED%8E%98%EC%B9%98-%EC%A1%B0%EC%9D%B8Fetch-join  
+https://dev-coco.tistory.com/165  
+https://velog.io/@yhlee9753/OneToOne-%EA%B4%80%EA%B3%84%EB%8A%94-%EA%B3%BC%EC%97%B0-%EC%A7%80%EC%97%B0%EB%A1%9C%EB%94%A9%EC%9D%B4-%EB%90%98%EB%8A%94%EA%B0%80  
+https://jojoldu.tistory.com/372  
+https://ittrue.tistory.com/292  
+https://green-bin.tistory.com/24  
+https://coding-business.tistory.com/100  
+https://www.reddit.com/r/java/comments/w4abyg/is_there_a_reason_to_not_use_spring_data_jpa_and/?rdt=43738  
+
+---
