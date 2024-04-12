@@ -2226,3 +2226,60 @@ public class CallLogAspect {
 만약 AspectJ를 직접 사용하면 `public void internal()`함수에 코드안에 직접 코드를 쑤셔박아 넣는 방식을 사용할 수 있기때문에 이런 문제가 안생길 수 있지만 너무 복잡하기에 다른 해결책을 사용한다.  
 
 그해결책은 다음시간에  
+
+---
+## 20240412
+### 프록시 AOP 실무주의사항 문제1 해결법
+
+#### 가장 권장하는 해결법
+
+```java
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class CallServiceV3 {
+ private final InternalService internalService;
+ public void external() {
+ log.info("call external");
+ internalService.internal(); //외부 메서드 호출
+ }
+}
+
+
+
+@Slf4j
+@Component
+public class InternalService {
+ public void internal() {
+ log.info("call internal");
+ }
+
+```
+그냥 아까 내부함수 호출하는쪽으로 새로운 클래스로 뽑아서 새로 만든다. 이것이 가장 권장하는방법이다.  
+또는 클라이언트 쪽 한칸 뒷단계에서 external호출 -> internal호출 2줄로 작성할 수도 있긴하다.  
+
+#### 권장하지 않는방법
+
+1.
+
+수정자 주입으로 자기자신을 다시 받아서 그 받은거를 `callServiceV1.internal(); `사용하는 방법이 있는데 자기자신이기때문에 생성자주입은 안되고 수정자로 사용해야한다.  
+스프링2.6부터 어떤방식이든 순환참고 금지하는것으로 기본설정되어있다.
+
+
+2
+```java
+@Slf4j
+@Component
+@RequiredArgsConstructor
+public class CallServiceV2 {
+// private final ApplicationContext applicationContext;
+ private final ObjectProvider<CallServiceV2> callServiceProvider;
+ public void external() {
+ log.info("call external");
+// CallServiceV2 callServiceV2 = 
+applicationContext.getBean(CallServiceV2.class);
+ CallServiceV2 callServiceV2 = callServiceProvider.getObject();
+ callServiceV2.internal(); //외부 메서드 호출
+ }
+```
+스프링 빈 컨테이너에서 직접 꺼내쓰는 코드 방법이 있다. 너무 강제적으로 하는거같아서 좋지않다.  
