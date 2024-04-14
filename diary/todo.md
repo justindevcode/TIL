@@ -3375,3 +3375,50 @@ OWASP는 CWE의 근본 원인에 초점을 맞춰 새로운 리스트를 만들�
 
 #### 참고자료
 https://www.appsealing.com/kr/2022-owasp-10%EB%8C%80-%EC%B7%A8%EC%95%BD%EC%A0%90/  
+
+---
+## 20240415
+### 프록시 AOP 실무주의사항 문제2와 해결법
+
+#### 프록시 기술과 한계 - 타입 캐스팅
+JDK 동적 프록시 한계
+인터페이스 기반으로 프록시를 생성하는 JDK 동적 프록시는 구체 클래스로 타입 캐스팅이 불가능한 한계가 있다. 어떤 한계인지 코드를 통해서 알아보자  
+```java
+@Slf4j
+@SpringBootTest(properties = {"spring.aop.proxy-target-class=false"}) //JDK 동적
+프록시, DI 예외 발생
+//@SpringBootTest(properties = {"spring.aop.proxy-target-class=true"}) //CGLIB 프
+록시, 성공
+@Import(ProxyDIAspect.class)
+public class ProxyDITest {
+ @Autowired MemberService memberService; //JDK 동적 프록시 OK, CGLIB OK
+ @Autowired MemberServiceImpl memberServiceImpl; //JDK 동적 프록시 X, CGLIB OK
+ @Test
+ void go() {
+ log.info("memberService class={}", memberService.getClass());
+ log.info("memberServiceImpl class={}", memberServiceImpl.getClass());
+ memberServiceImpl.hello("hello");
+ }
+}
+```
+`@Autowired MemberServiceImpl memberServiceImpl;`이부분에서 JDK 동적 프록시를 사용하면 상위 인터페이스 기반으로 만들어진 프록시 이기에 실제 클래스`MemberServiceImpl`타입으로 받을 수 없다.  
+
+물론 만약 인터페이스가 존재한다면 다형성을 위해서도 대부분의 작업을 ` @Autowired MemberService memberService;`이런식으로 인터페이스로 받긴해서 문제가 없긴한데  
+간혹 실제클래스를 받아야하거나 테스트코드등에서 너무 불편한경우가 있다.  
+
+그럼 CGLIB만 쓰면 되지 않을까??
+
+#### CGLIB 단점(이였던것)
+
+CGLIB 구체 클래스 기반 프록시 문제점
+* 대상 클래스에 기본 생성자 필수
+* 생성자 2번 호출 문제 (실제 진짜 내가 코드 쓴 객체 생성될때 + 프록시만들면서 부모생성자 (super)로 한번더 )
+* final 키워드 클래스, 메서드 사용 불가 (사실 실제 서버환경에서는 AOP적용 대상에 final안씀)
+
+이런 문제가 있었지만  
+대상 클래스에 기본 생성자 필수 - 스프링 4.0부터 objenesis 라는 특별한 라이브러리를 사용해서 기본 생성자 없이 객체 생성이 가능하다.  
+생성자 2번 호출 문제 - 위 해결법으로 동시에 이것도 해결  
+
+이런방식으로 CGLIB를 개선하며 스프링부트 2.0부터는 아에 무조건 CGLIB가 기본 프록시방법으로 고정되었다.  
+
+---
