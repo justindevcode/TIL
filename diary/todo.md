@@ -4093,3 +4093,7 @@ public class Main {
 일단 나는 이중for문으로 그냥 풀었다. 이렇게 해도 효율성까지 통과는 했다.  
 이걸 어떻게 스택큐를 활용하냐 감이 안와서 찾아봤는데 (https://velog.io/@imok-_/%ED%94%84%EB%A1%9C%EA%B7%B8%EB%9E%98%EB%A8%B8%EC%8A%A4-%EC%A3%BC%EC%8B%9D%EA%B0%80%EA%B2%A9-java-Stack-%ED%99%9C%EC%9A%A9)  
 그냥 이해만 해두자.. 오히려 시간도 더 걸리더라  
+
+---
+
+## 20240420
