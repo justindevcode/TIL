@@ -4097,3 +4097,92 @@ public class Main {
 ---
 
 ## 20240420
+### 스프링 톰캣 직접 사용해보기
+
+톰캣 실행법 다운받아서 -> 권한주고 -> 실행명령어  
+기본적으로 8080포트 사용  
+
+#### 날것의 자바 War로 톰캣에 올리기  
+
+```java
+plugins {
+ id 'java'
+ id 'war'
+}
+group = 'hello'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '17'
+repositories {
+ mavenCentral()
+}
+dependencies {
+ //서블릿
+ implementation 'jakarta.servlet:jakarta.servlet-api:6.0.0'
+}
+tasks.named('test') {
+ useJUnitPlatform()
+}
+```
+날것의 자바 gradle설정 war로 빌드하겠다는 설정과 최소한의 서블릿 라이브러리  
+
+예시로 `/src/main`에 webapp이라는 폴더생성후 index.html파일 생성
+
+```html
+<html>
+<body>index html</body>
+</html>
+```
+간단 예시
+
+```java
+@WebServlet(urlPatterns = "/test")
+public class TestServlet extends HttpServlet {
+ @Override
+ protected void service(HttpServletRequest req, HttpServletResponse resp) 
+throws IOException {
+ System.out.println("TestServlet.service");
+ resp.getWriter().println("test");
+ }
+}
+```
+서블릿도 간단하게 등록  
+
+`./gradlew build`로 빌드해보면 WAR파일생김
+이거 압축 풀어보면 
+
+* WEB-INF
+	* classes
+		* hello/servlet/TestServlet.class
+	* lib
+		* jakarta.servlet-api-6.0.0.jar
+* index.html
+
+이런 구조의 파일 생겼던것  
+
+* JAR 소개
+자바는 여러 클래스와 리소스를 묶어서 JAR (Java Archive)라고 하는 압축 파일을 만들 수 있다.  
+이 파일은 JVM 위에서 직접 실행되거나 또는 다른 곳에서 사용하는 라이브러리로 제공된다.  
+직접 실행하는 경우 main() 메서드가 필요하고, MANIFEST.MF 파일에 실행할 메인 메서드가 있는 클래스를 지정해두어야 한다.  
+실행 예) java -jar abc.jar  
+Jar는 쉽게 이야기해서 클래스와 관련 리소스를 압축한 단순한 파일이다. 필요한 경우 이 파일을 직접 실행할 수도 있고, 다른 곳에서 라이브러리로 사용할 수도 있다.  
+
+* WAR 소개
+WAR(Web Application Archive)라는 이름에서 알 수 있듯 WAR 파일은 웹 애플리케이션 서버(WAS)에 배포할 때사용하는 파일이다.  
+JAR 파일이 JVM 위에서 실행된다면, WAR는 웹 애플리케이션 서버 위에서 실행된다.  
+웹 애플리케이션 서버 위에서 실행되고, HTML 같은 정적 리소스와 클래스 파일을 모두 함께 포함하기 때문에 JAR와비교해서 구조가 더 복잡하다.  
+그리고 WAR 구조를 지켜야 한다.  
+
+* WAR 구조
+* WEB-INF
+	* classes : 실행 클래스 모음
+	* lib : 라이브러리 모음
+	* web.xml : 웹 서버 배치 설정 파일(생략 가능)
+* index.html : 정적 리소스
+WEB-INF 폴더 하위는 자바 클래스와 라이브러리, 그리고 설정 정보가 들어가는 곳이다.  
+WEB-INF 를 제외한 나머지 영역은 HTML, CSS 같은 정적 리소스가 사용되는 영역이다.  
+
+#### 톰캣 폴더에 WAR 배포방법
+톰캣폴더/webapps쪽에 원래 있던 기본 톰캣app을 전부 삭제하고 빌드된 war 파일 복붙  
+war파일명을 `ROOT.war`로 변경후에 다시 톰캣을 실행시키면 톰캣이 얘를 까서 알아서 실행해준다.  
+
+로컬 IDE 인텔리제이에서 실행시키기 위해서는 내부 간단 설정을 해주면 인텔리제이 내부의 톰캣실행 딱 누르면 알아서 빌드되면서 실행된다. 설명참조  
