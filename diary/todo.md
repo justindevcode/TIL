@@ -4235,3 +4235,71 @@ class Solution {
 }
 ```
 처음에는 소인수분해를 해야하나 어찌해야하나 했는데 그냥 밖의 갈색을 기준으로 가로 길이를 루프돌면서 연산했다.  
+
+---
+## 20240423
+### 서블릿 컨테이너 초기화  
+
+WAS를 실행하는 시점에 필요한 초기화 작업들이 있다. 서비스에 필요한 필터와 서블릿을 등록하고, 여기에 스프링을 사용한다면 스프링 컨테이너를 만들고, 서블릿과 스프링을 연결하는 디스페처 서블릿도 등록해야 한다.  
+WAS가 제공하는 초기화 기능을 사용하면, WAS 실행 시점에 이러한 초기화 과정을 진행할 수 있다.  
+
+#### 서블릿 컨테이너  
+
+서블릿 컨테이너는 실행 시점에 초기화 메서드인 onStartup() 을 호출해준다. 여기서 애플리케이션에 필요한 기능 들을 초기화 하거나 등록할 수 있다  
+```java
+public interface ServletContainerInitializer {
+ public void onStartup(Set<Class<?>> c, ServletContext ctx) throws
+ServletException; 
+}
+```
+하지만 여기에 추가작업이 하나 더필요한데 `resources/META-INF/services/jakarta.servlet.ServletContainerInitializer` 이런 파일 만들어서 스프링 야믈파일 설정하듯이  
+`hello.container.MyContainerInitV1`이 클레스 페키지 주소까지 써줘야한다. 파일명, 오타 나면 안된다.  
+
+#### 서블릿 컨테이너 등록 2
+자바 코드로 직접 등록하는 방식이 있는데  
+```java
+public interface AppInit {
+ void onStartup(ServletContext servletContext);
+}
+```
+아무렇게나 인터페이스 만들어두고  
+```java
+public class AppInitV1Servlet implements AppInit {
+ @Override
+ public void onStartup(ServletContext servletContext) {
+ System.out.println("AppInitV1Servlet.onStartup");
+ //순수 서블릿 코드 등록
+ ServletRegistration.Dynamic helloServlet =
+ servletContext.addServlet("helloServlet", new HelloServlet());
+ helloServlet.addMapping("/hello-servlet");
+ }
+}
+```
+그거로 적당히 구현한다음  
+
+```java
+@HandlesTypes(AppInit.class)
+public class MyContainerInitV2 implements ServletContainerInitializer {
+ @Override
+ public void onStartup(Set<Class<?>> c, ServletContext ctx) throws
+ServletException {
+ System.out.println("MyContainerInitV2.onStartup");
+ System.out.println("MyContainerInitV2 c = " + c);
+ System.out.println("MyContainerInitV2 container = " + ctx);
+ for (Class<?> appInitClass : c) {
+ try {
+ //new AppInitV1Servlet()과 같은 코드
+ AppInit appInit = (AppInit) 
+appInitClass.getDeclaredConstructor().newInstance();
+ appInit.onStartup(ctx);
+ } catch (Exception e) {
+ throw new RuntimeException(e);
+ }
+ }
+ }
+}
+```
+컨테이너 코드쪽에서 `@HandlesTypes(AppInit.class)`인터페이스 넣어주면 `Set<Class<?>> c` 매개변수에 구현체들 class로 들어온다. 이거를 for돌리면서직업 인스턴스생성해서 필요한 함수들 실행해주면 되는것  
+이렇게 복잡하게 쓰는 이유는 그 첫번째 방법의 파일만들어서 야믈처럼 등록해주고 이런거도 번거롭고 더쉬운방법인 `@WebServlet(urlPatterns = "/test")` 이런 어노테이션 이용방법은 저 주소를 자바 코드로 if 쓰면서 내가 원할때 바꿀 수가없기때문이다.  
+
+---
