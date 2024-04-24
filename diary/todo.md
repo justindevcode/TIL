@@ -4303,3 +4303,84 @@ appInitClass.getDeclaredConstructor().newInstance();
 이렇게 복잡하게 쓰는 이유는 그 첫번째 방법의 파일만들어서 야믈처럼 등록해주고 이런거도 번거롭고 더쉬운방법인 `@WebServlet(urlPatterns = "/test")` 이런 어노테이션 이용방법은 저 주소를 자바 코드로 if 쓰면서 내가 원할때 바꿀 수가없기때문이다.  
 
 ---
+## 20240424
+### 스프링 컨테이너 등록  
+
+스프링 라이브러리를 그레이들에 넣어주고  
+
+```java
+@RestController
+public class HelloController {
+ @GetMapping("/hello-spring")
+ public String hello() {
+ System.out.println("HelloController.hello");
+ return "hello spring!";
+ }
+}
+```
+익숙한 컨트롤러를 만들어준다.  
+
+```java
+@Configuration
+public class HelloConfig {
+ @Bean
+ public HelloController helloController() {
+ return new HelloController();
+ }
+}
+```
+위의 컨트롤러를 수동 빈등록으로 넣어준다. 컴포넌트스캔은 그냥 안써봄  
+
+```java
+public class AppInitV2Spring implements AppInit {
+ @Override
+ public void onStartup(ServletContext servletContext) {
+ System.out.println("AppInitV2Spring.onStartup");
+ //스프링 컨테이너 생성
+ AnnotationConfigWebApplicationContext appContext = new
+AnnotationConfigWebApplicationContext();
+ appContext.register(HelloConfig.class);
+ //스프링 MVC 디스패처 서블릿 생성, 스프링 컨테이너 연결
+ DispatcherServlet dispatcher = new DispatcherServlet(appContext);
+ //디스패처 서블릿을 서블릿 컨테이너에 등록 (이름 주의! dispatcherV2)
+ ServletRegistration.Dynamic servlet =
+ servletContext.addServlet("dispatcherV2", dispatcher);
+ // /spring/* 요청이 디스패처 서블릿을 통하도록 설정
+ servlet.addMapping("/spring/*");
+ }
+}
+```
+`AppInit`의 구현체는 모두 자동으로 서블릿컨테이너에서 실행되니깐 하나더 만들어주면서 스프링 컨테이너(빈관리)생성 -> 스프링MVC디스패처서블릭생성 -> 스프링컨테이너, 디스패처서블릿연결 -> 이 디스패처서블릿을 서블릿컨테이너에 등록  
+이렇게 하면 지금 예시에서는 `/spring`로 들어온 요청은 `/spring`이거 이후에 적힌 주소로 우리가 알던 컨트롤러등에서 요청받음  
+
+#### 스프링 MVC 서블릿 컨테이너 초기화 지원  
+서블릿컨테이너를 초기화하기위해 지금까지 한짓이  
+`ServletContainerInitializer` 인터페이스구현 -> 어플리케이션초기화 `@HandlesTypes` -> `/META-INF/services/jakarta.servlet.ServletContainerInitializer`경로등록  
+이런 번거로운 작업 필요했다.  
+
+하지만 스프링이 제공하는 특별한 인터페이스를 구현하면 위과정이 필요없다.  
+```java
+public class AppInitV3SpringMvc implements WebApplicationInitializer {
+ @Override
+ public void onStartup(ServletContext servletContext) throws ServletException
+{
+ System.out.println("AppInitV3SpringMvc.onStartup");
+ //스프링 컨테이너 생성
+ AnnotationConfigWebApplicationContext appContext = new
+AnnotationConfigWebApplicationContext();
+ appContext.register(HelloConfig.class);
+ //스프링 MVC 디스패처 서블릿 생성, 스프링 컨테이너 연결
+ DispatcherServlet dispatcher = new DispatcherServlet(appContext);
+ //디스패처 서블릿을 서블릿 컨테이너에 등록 (이름 주의! dispatcherV3)
+ ServletRegistration.Dynamic servlet =
+ servletContext.addServlet("dispatcherV3", dispatcher);
+ //모든 요청이 디스패처 서블릿을 통하도록 설정
+ servlet.addMapping("/");
+ }
+}
+```
+그냥 `WebApplicationInitializer`를 구현한거뿐인데 이게 가능한 이유는 별거없다. 그레이들로 추가된 스프링 MVC를 까보면  
+`WebApplicationInitializer` 이 인터페이스를 기반으로 `서블릿컨테이너를 초기화하기위해 지금까지 한짓` 이걸 그냥 미리해둔 코드가 있다.  
+`WebApplicationInitializer` 이거 이름으로 어플리캐이션 초기화`@HandlesTypes` 자동으로 되어있고 경로등록도 그냥 미리 해둔것이다. 처음 서블릿 컨테이너 등록한거처럼  
+
+스프링 부트를 사용하지않고 스프링을 서버에 올리기위해서는 이런 과정이 필요했다.  
