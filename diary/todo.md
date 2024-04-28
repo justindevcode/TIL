@@ -4571,3 +4571,128 @@ public class Main {
 }
 ```
 이문제 어제도 풀었는데 dfs가 쉽지않아서 오늘 다시풀었다. 사실 암기해서 풀은느낌이긴하다..  
+
+---
+## 20240429
+### 스프링 내장톰캣
+
+#### 내장톰캣 기능 제공  
+기존의 `war`파일은 무조건 서버위에서만 실행되던 파일이였다 그런데 톰캣도 자바인데 라이브러리로 내장으로 가질수는없을까? 해서 나온것이 내장톰캣  
+
+```java
+dependencies {
+ //스프링 MVC 추가
+ implementation 'org.springframework:spring-webmvc:6.0.4'
+ //내장 톰캣 추가
+ implementation 'org.apache.tomcat.embed:tomcat-embed-core:10.1.5'
+}
+.
+.
+.
+//일반 Jar 생성
+task buildJar(type: Jar) {
+ manifest {
+ attributes 'Main-Class': 'hello.embed.EmbedTomcatSpringMain'
+ }
+ with jar
+}
+```
+이정도 디펜던시를 사용하면 쓸 수 있다. jar생성 task도 추가  
+
+이전의
+* hello.servlet.HelloServlet
+* hello.spring.HelloController
+* hello.spring.HelloConfig
+코드가 있다고할때
+`main`함수에 이정도만 써주면 일단 톰캣을 사용할 수 있다.  
+```java
+public class EmbedTomcatServletMain {
+ public static void main(String[] args) throws LifecycleException {
+ System.out.println("EmbedTomcatServletMain.main");
+ //톰캣 설정
+ Tomcat tomcat = new Tomcat();
+ Connector connector = new Connector();
+ connector.setPort(8080);
+ tomcat.setConnector(connector);
+ //서블릿 등록
+ Context context = tomcat.addContext("", "/");
+ tomcat.addServlet("", "helloServlet", new HelloServlet());
+ context.addServletMappingDecoded("/hello-servlet", "helloServlet");
+ tomcat.start();
+ }
+}
+```
+톰캣생성 -> 포트연결 -> 톰캣서블릿등록 -> 경로등록 -> 스타트  
+이러고 `http://localhost:8080/hello-servlet`로 요청보내면 지정된 컨트롤러가 실행된다.  
+
+이걸기반으로 스프링을 등록하는거도 똑같다.
+
+```java
+public class EmbedTomcatSpringMain {
+ public static void main(String[] args) throws LifecycleException {
+ System.out.println("EmbedTomcatSpringMain.main");
+ //톰캣 설정
+ Tomcat tomcat = new Tomcat();
+ Connector connector = new Connector();
+ connector.setPort(8080);
+ tomcat.setConnector(connector);
+ //스프링 컨테이너 생성
+ AnnotationConfigWebApplicationContext appContext = new
+AnnotationConfigWebApplicationContext();
+ appContext.register(HelloConfig.class);
+ //스프링 MVC 디스패처 서블릿 생성, 스프링 컨테이너 연결
+ DispatcherServlet dispatcher = new DispatcherServlet(appContext);
+ //디스패처 서블릿 등록
+ Context context = tomcat.addContext("", "/");
+ tomcat.addServlet("", "dispatcher", dispatcher);
+ context.addServletMappingDecoded("/", "dispatcher");
+ tomcat.start();
+ }
+}
+```
+위랑 비슷하게 스프링 컨테이너를 실행하고 내장톰캣에 디스패처 서블릿을 등록해줬다. 그러고 실행  
+`http://localhost:8080/hello-spring` 똑같이 요청해주면 응답이 나온다.  
+
+사실 진짜 톰캣을 딥하게 직접 사용하려면 여러 예외처리와 이것저것 해줘야할게 많은데 배워야할게 많으니 이정도만 이해하고 넘어가도된다.  
+
+#### 빌드와 배포
+우리는 이제 순수 자바의 main 메소드만 실행하면 되기때문에 jar로 빌드해주면된다.  
+그리고 jar는 `META-INF/MANIFEST.MF`파일안에 main() 메서드의 클래스를 지정해줘야하는데
+```java
+task buildJar(type: Jar) {
+ manifest {
+ attributes 'Main-Class': 'hello.embed.EmbedTomcatSpringMain'
+ }
+ with jar
+}
+```
+task에 그부분을 같이 넣어줬다.  
+
+`./gradlew clean buildJar`하고 `build/libs/embed-0.0.1-SNAPSHOT.jar`위치에 `java -jar embed-0.0.1-SNAPSHOT.jar`이거 실행해주면???
+
+안된다;;;;
+
+왜냐하면 `embed-0.0.1-SNAPSHOT.jar`를 까보면 우리가 라이브러리 등록한 MVC, 톰캣 라이브러리가 아에없다.  
+기본적인 jar는 war와 다르게 lib폴더에 라이브러리 jar를 포함할 수 없고, jar안에 다른 jar를 포함하지 못하도록 규정되어있다.  
+
+그래서 나온방법  
+
+```java
+task buildFatJar(type: Jar) {
+ manifest {
+ attributes 'Main-Class': 'hello.embed.EmbedTomcatSpringMain'
+ }
+ duplicatesStrategy = DuplicatesStrategy.WARN
+ from { configurations.runtimeClasspath.collect { it.isDirectory() ? it : 
+zipTree(it) } }
+ with jar
+}
+```
+task에 FatJar추가 -> 내가 등록한 라이브러리의 jar도 모두 압축해제해서 class파일로 전부까서 기존의 내 코드와 합쳐 jar만들기  
+
+이렇게하면 `java -jar embed-0.0.1-SNAPSHOT.jar`실행했을때 `INFO: Starting ProtocolHandler ["http-nio-8080"]`서버가 띄워진다.  
+
+다만  이방법도 단점이 있는데 `META-INF/services/jakarta.servlet.ServletContainerInitializer`이런 기초적인 서블릿등록파일이 여러 라이브러리에 동시에있을 수 있다.  
+이경우 한쪽이 버려지거나 하는데 이러면 버려진쪽은 아에 실행이 안된다.  
+
+그렇지만 이런문제들까지 스프링부트가 해결해준다. 다음에 알아보기  
