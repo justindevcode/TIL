@@ -4515,3 +4515,59 @@ for(int i=0; i<n; i++) {
 위 코드는 O(n²)와 O(n)이 합쳐져 O(n²+n)이 될 것 같지만 유감스럽게도 O(n²)이 된다. n²에 비해서 n은 영향력이 낮으므로 이를 무시하고 표기하는 것이 규칙이다. 앞서 상수항과 영향력이 낮은 항을 무시하는 이유는 Big-O 표기법이 실제 소요시간을 나타내기 위한 방법이 아니라 자료의 수가 증가함에 따라 소요시간이 얼마나 증가하는지를 나타내기 위한 방법이기 때문이다.  
 
 O(?) <- 이 괄호 안에 들어가는 식을 계산해서 1억당 1초 정도로 생각할 수 있다고 한다. 예를 들어 n이 1억인데 시간 복잡도가 O(n)이면 소요시간이 1초정도 걸린다는 뜻이다. n이 1억, m이 10, 시간 복잡도가 O(nm)이면 소요시간이 10초가 된다는 것이다.
+
+---
+## 20240428
+## 20240319
+### 프로그래머스 피로도 dfs 2단계
+XX게임에는 피로도 시스템(0 이상의 정수로 표현합니다)이 있으며, 일정 피로도를 사용해서 던전을 탐험할 수 있습니다. 이때, 각 던전마다 탐험을 시작하기 위해 필요한 "최소 필요 피로도"와 던전 탐험을 마쳤을 때 소모되는 "소모 피로도"가 있습니다. "최소 필요 피로도"는 해당 던전을 탐험하기 위해 가지고 있어야 하는 최소한의 피로도를 나타내며, "소모 피로도"는 던전을 탐험한 후 소모되는 피로도를 나타냅니다. 예를 들어 "최소 필요 피로도"가 80, "소모 피로도"가 20인 던전을 탐험하기 위해서는 유저의 현재 남은 피로도는 80 이상 이어야 하며, 던전을 탐험한 후에는 피로도 20이 소모됩니다.  이 게임에는 하루에 한 번씩 탐험할 수 있는 던전이 여러개 있는데, 한 유저가 오늘 이 던전들을 최대한 많이 탐험하려 합니다. 유저의 현재 피로도 k와 각 던전별 "최소 필요 피로도", "소모 피로도"가 담긴 2차원 배열 dungeons 가 매개변수로 주어질 때, 유저가 탐험할수 있는 최대 던전 수를 return 하도록 solution 함수를 완성해주세요.  
+
+예시
+```java
+int k = 80;
+int[][] dungeons = {{80,20},{50,40},{30,10}};
+
+답 : 3
+```
+
+코드
+```java
+public class Main {
+    public static void main(String[] args) {
+        int k = 80;
+        int[][] dungeons = {{80,20},{50,40},{30,10}};
+
+
+        Solution solution = new Solution();
+        //System.out.println("Hello World");
+
+        int arr3 = solution.solution(k, dungeons);
+
+        System.out.println("arr3 = " + arr3);
+    }
+
+    static class Solution {
+        private int answer = 0;
+        private boolean[] visited;
+        public int solution(int k, int[][] dungeons) {
+            visited = new boolean[dungeons.length];
+            dfs(0, k, dungeons);
+            return answer;
+        }
+
+        private void dfs(int depth, int k, int[][] dungeons) {
+            for (int i = 0; i < dungeons.length; i++) {
+                if (visited[i] || k < dungeons[i][0]) {
+                    continue;
+                }
+                visited[i] = true;
+                dfs(depth + 1, k - dungeons[i][1], dungeons);
+                visited[i] = false;
+            }
+            answer = Math.max(depth, answer);
+        }
+
+    }
+}
+```
+이문제 어제도 풀었는데 dfs가 쉽지않아서 오늘 다시풀었다. 사실 암기해서 풀은느낌이긴하다..  
