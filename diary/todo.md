@@ -4848,3 +4848,116 @@ example_topic_users table이 생성된 것을 볼 수 있고
 
 #### 참조
 https://cjw-awdsd.tistory.com/53  
+
+---
+
+## 20240501
+### 스프링부트 클래스 만들기와 부트 내부확인
+
+#### 스프링 부트 클래스 만들기  
+이전의 그냥 main함수안에서 톰캣실행 서블릿등등 만들고 연결하고실행하는코드 한번 모아서 함수하나로 정리  
+
+```java
+public class MySpringApplication {
+ public static void run(Class configClass, String[] args) {
+ System.out.println("MySpringBootApplication.run args=" + List.of(args));
+ //톰캣 설정
+ Tomcat tomcat = new Tomcat();
+ Connector connector = new Connector();
+ connector.setPort(8080);
+ tomcat.setConnector(connector);
+ //스프링 컨테이너 생성
+ AnnotationConfigWebApplicationContext appContext = new
+AnnotationConfigWebApplicationContext();
+ appContext.register(configClass);
+ //스프링 MVC 디스패처 서블릿 생성, 스프링 컨테이너 연결
+ DispatcherServlet dispatcher = new DispatcherServlet(appContext);
+ //디스패처 서블릿 등록
+ Context context = tomcat.addContext("", "/");
+ tomcat.addServlet("", "dispatcher", dispatcher);
+ context.addServletMappingDecoded("/", "dispatcher");
+ try {
+ tomcat.start();
+ } catch (LifecycleException e) {
+ throw new RuntimeException(e);
+ }
+ }
+}
+```
+
+부트에 필요한 커스텀 어노테이션 제작(예시로는 컴포넌트스캔용으로하나만 추가기능 등록된것)
+```java
+@Target(ElementType.TYPE)
+@Retention(RetentionPolicy.RUNTIME)
+@Documented
+@ComponentScan
+public @interface MySpringBootApplication {
+}
+```
+
+그럼 실제 사용 main함수 ,클래스에서는
+
+```java
+@MySpringBootApplication
+public class MySpringBootMain {
+ public static void main(String[] args) {
+ System.out.println("MySpringBootMain.main");
+ MySpringApplication.run(MySpringBootMain.class, args);
+ }
+}
+```
+우리가 보던 스프링부트와 같은 모양  
+
+#### 부트 내부 살펴보기
+
+```java
+@SpringBootApplication
+public class BootApplication {
+public static void main(String[] args) {
+SpringApplication.run(BootApplication.class, args);
+}
+}
+```
+실제 부트 main함수는 이렇게 생겼는데 저 run함수 까보면 결국 스프링컨테이너 생성, was에 서블릿들 연결해서 실행 하는 코드 똑같이 들어있음 부가적인것 있긴하지만  
+
+아무튼 이런식으로 만든 부트 빌드해보면 `./gradlew clean build`
+
+* boot-0.0.1-SNAPSHOT.jar
+	* META-INF
+		* MANIFEST.MF
+	* org/springframework/boot/loader
+		* JarLauncher.class : 스프링 부트 main() 실행 클래스
+	* BOOT-INF
+		* classes : 우리가 개발한 class 파일과 리소스 파일
+			* hello/boot/BootApplication.class
+			* hello/boot/controller/HelloController.class
+			* …
+		* lib : 외부 라이브러리
+			* spring-webmvc-6.0.4.jar
+			* tomcat-embed-core-10.1.5.jar
+			* ...
+		* classpath.idx : 외부 라이브러리 경로
+		* layers.idx : 스프링 부트 구조 경로
+
+잘보면 이전에 시도해봤던 Fat jar랑은 좀다름 jar안에 jar안된다고 하는데 들어있고 하는데 살펴보면
+
+`META-INF/MANIFEST.MF`
+```
+Manifest-Version: 1.0
+Main-Class: org.springframework.boot.loader.JarLauncher
+Start-Class: hello.boot.BootApplication
+Spring-Boot-Version: 3.0.2
+Spring-Boot-Classes: BOOT-INF/classes/
+Spring-Boot-Lib: BOOT-INF/lib/
+Spring-Boot-Classpath-Index: BOOT-INF/classpath.idx
+Spring-Boot-Layers-Index: BOOT-INF/layers.idx
+Build-Jdk-Spec: 17
+```
+`Main-Class`에 우리가 등록한 부트 main함수가 아님 이유는 부트가 기존의 jar를 좀더 손봐서 `org.springframework.boot.loader.JarLauncher`를 먼저 실행하고  
+`org.springframework.boot.loader.JarLauncher`이녀석이 내부의 jar를 풀어서 사용할 수 있게 세팅을 한번더 한다음 그다음에 `Start-Class: hello.boot.BootApplication` 내가 등록한 애를 실행 할 수 있도록 좀더 커스텀한것임  
+`war`구조를 기반으로 비슷하게 만들었음  
+
+
+참고로 `boot-0.0.1-SNAPSHOT-plain.jar`는 라이브러리 빠진 순수 우리가 작성한 코드만 들어있는 jar인데 쓸일거의없음  
+
+이런 부분은 전체적으로 이해만 하고 넘어가자 배울것이 너무 많다.  
