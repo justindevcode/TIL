@@ -4961,3 +4961,77 @@ Build-Jdk-Spec: 17
 참고로 `boot-0.0.1-SNAPSHOT-plain.jar`는 라이브러리 빠진 순수 우리가 작성한 코드만 들어있는 jar인데 쓸일거의없음  
 
 이런 부분은 전체적으로 이해만 하고 넘어가자 배울것이 너무 많다.  
+
+---
+
+## 20240502
+### 스프링 부트 스타터와 라이브러리 관리
+
+#### 직접관리시절
+
+```java
+dependencies {
+ //1. 라이브러리 직접 지정
+ //스프링 웹 MVC
+ implementation 'org.springframework:spring-webmvc:6.0.4'
+ //내장 톰캣
+ implementation 'org.apache.tomcat.embed:tomcat-embed-core:10.1.5'
+ //JSON 처리
+ implementation 'com.fasterxml.jackson.core:jackson-databind:2.14.1'
+ //스프링 부트 관련
+ implementation 'org.springframework.boot:spring-boot:3.0.2'
+ implementation 'org.springframework.boot:spring-boot-autoconfigure:3.0.2'
+ //LOG 관련
+ implementation 'ch.qos.logback:logback-classic:1.4.5'
+ implementation 'org.apache.logging.log4j:log4j-to-slf4j:2.19.0'
+ implementation 'org.slf4j:jul-to-slf4j:2.0.6'
+ //YML 관련
+ implementation 'org.yaml:snakeyaml:1.33'
+}
+```
+그냥 모든 라이브러리, 버전 다 넣고 호환성 확인도 내가
+
+#### 버전관리 도움
+
+```java
+plugins {
+ id 'org.springframework.boot' version '3.0.2'
+ id 'io.spring.dependency-management' version '1.1.0' //추가
+ id 'java'
+}
+
+dependencies {
+ //2. 스프링 부트 라이브러리 버전 관리
+ //스프링 웹, MVC
+ implementation 'org.springframework:spring-webmvc'
+ //내장 톰캣
+ implementation 'org.apache.tomcat.embed:tomcat-embed-core'
+ //JSON 처리
+ implementation 'com.fasterxml.jackson.core:jackson-databind'
+ //스프링 부트 관련
+ implementation 'org.springframework.boot:spring-boot'
+ implementation 'org.springframework.boot:spring-boot-autoconfigure'
+ //LOG 관련
+ implementation 'ch.qos.logback:logback-classic'
+ implementation 'org.apache.logging.log4j:log4j-to-slf4j'
+ implementation 'org.slf4j:jul-to-slf4j'
+ //YML 관련
+ implementation 'org.yaml:snakeyaml'
+}
+
+```
+` id 'io.spring.dependency-management' version '1.1.0' //추가` 이거 넣으면 버전 미리 스프링에서 확인한거 알아서 넣어줌  
+별다른게 아니라 깃헙 스프링공식쪽에 그레들로 대중적인거 전부다 싹다 호환되는 버전 정리해서 써놓은것임 그거 기반으로 설정해줌  
+
+#### 스프링 부트 스타터
+
+```java
+dependencies {
+ //3. 스프링 부트 스타터
+ implementation 'org.springframework.boot:spring-boot-starter-web'
+}
+```
+위쪽에 라이브러리들 web으로 사용할때 대부분 필요한 라이브러리 인데 스프링부트에서 그걸모아서 상위의 라이브러리로 관리해줌 그래서 이거 한줄만 넣어주면  
+mvc, 로그, 직렬화, 톰캣 등등 필요한거 한번에 끌어다 쓸수있게 모아준것  
+
+여담으로 내 맘데로 버전 하나만 바꾸고싶고하면 `ext['tomcat.version'] = '10.1.4`이런식으로 한줄 추가해주면 예시에서는 톰캣의 버전정보만 조금 다르게 설정도 가능  
