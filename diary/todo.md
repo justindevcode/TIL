@@ -5035,3 +5035,69 @@ dependencies {
 mvc, 로그, 직렬화, 톰캣 등등 필요한거 한번에 끌어다 쓸수있게 모아준것  
 
 여담으로 내 맘데로 버전 하나만 바꾸고싶고하면 `ext['tomcat.version'] = '10.1.4`이런식으로 한줄 추가해주면 예시에서는 톰캣의 버전정보만 조금 다르게 설정도 가능  
+
+---
+## 20240503
+### 프로그래머스 완전탐색 모음사전 2단계
+사전에 알파벳 모음 'A', 'E', 'I', 'O', 'U'만을 사용하여 만들 수 있는, 길이 5 이하의 모든 단어가 수록되어 있습니다. 사전에서 첫 번째 단어는 "A"이고, 그다음은 "AA"이며, 마지막 단어는 "UUUUU"입니다. 단어 하나 word가 매개변수로 주어질 때, 이 단어가 사전에서 몇 번째 단어인지 return 하도록 solution 함수를 완성해주세요.  
+
+예시 "I" = 1563
+
+코드
+```java
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        String word = "AAAE";
+
+
+        Solution solution = new Solution();
+        //System.out.println("Hello World");
+
+        int arr3 = solution.solution(word);
+
+        System.out.println("arr3 = " + arr3);
+    }
+
+    static class Solution {
+        private int answer = 0;
+        private ArrayList<String> totalString = new ArrayList<>();
+
+        private final ArrayList<String> useWord = new ArrayList<>(List.of("A","E","I","O","U"));
+        public int solution(String word) {
+
+            for (String s : useWord) {
+                dfs(0, s);
+            }
+
+            for(int i=0; i<totalString.size(); i++){
+                if(totalString.get(i).equals(word)){
+                    answer = i + 1;
+                    break;
+                }
+            }
+
+            return answer;
+
+
+        }
+
+        private void dfs(int depth, String string) {
+
+            if (depth >= 5) return;
+
+            if (!totalString.contains(string)) {
+                totalString.add(string);
+            }
+            for (String s : useWord) {
+                dfs(depth + 1, string + s);
+            }
+        }
+
+    }
+}
+```
+처음에 그냥 if문 반복으로 풀긴했었는데 이게 나중에 보고나니 저 단어생성의 순서가 DFS로 돌릴때와 똑같다고한다.  
+이걸 생각하기 어려웠고 DFS구현이 쉽지않았다.  
+
