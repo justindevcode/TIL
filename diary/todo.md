@@ -5101,3 +5101,111 @@ public class Main {
 처음에 그냥 if문 반복으로 풀긴했었는데 이게 나중에 보고나니 저 단어생성의 순서가 DFS로 돌릴때와 똑같다고한다.  
 이걸 생각하기 어려웠고 DFS구현이 쉽지않았다.  
 
+---
+## 20240504
+### 스프링부트 자동구성 방식
+
+#### 설명
+
+```java
+dependencies {
+ implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+ implementation 'org.springframework.boot:spring-boot-starter-web'
+ compileOnly 'org.projectlombok:lombok'
+ runtimeOnly 'com.h2database:h2'
+ annotationProcessor 'org.projectlombok:lombok'
+ testImplementation 'org.springframework.boot:spring-boot-starter-test'
+ //테스트에서 lombok 사용
+ testCompileOnly 'org.projectlombok:lombok'
+ testAnnotationProcessor 'org.projectlombok:lombok'
+}
+```
+JDBC를 사용하는 프로젝트를 한다고 가정해보자
+
+```java
+@Slf4j
+@Configuration
+public class DbConfig {
+ @Bean
+ public DataSource dataSource() {
+ log.info("dataSource 빈 등록");
+ HikariDataSource dataSource = new HikariDataSource();
+ dataSource.setDriverClassName("org.h2.Driver");
+ dataSource.setJdbcUrl("jdbc:h2:mem:test");
+ dataSource.setUsername("sa");
+ dataSource.setPassword("");
+ return dataSource;
+ }
+ @Bean
+ public TransactionManager transactionManager() {
+ log.info("transactionManager 빈 등록");
+ return new JdbcTransactionManager(dataSource());
+ }
+ @Bean
+ public JdbcTemplate jdbcTemplate() {
+ log.info("jdbcTemplate 빈 등록");
+ return new JdbcTemplate(dataSource());
+ }
+}
+```
+옛날같으면 무조건 설정파일에서 내가 사용할 모든 빈들 이런식으로 수동등록해야한다. -> 아무튼 이러면 JdbcTemplate사용시 정상동작  
+
+그런데 저 설정파일을 제거해보자 `@Configuration`이거 주석처리  
+
+이렇게 해도 모든 코드는 정상동작하고 테스트 코드상에서도 실제로 빈이 등록되어있다 어떻게??
+
+#### 자동등록
+
+`implementation 'org.springframework.boot:spring-boot-starter-jdbc'`이런 `spring-boot-starter`로 되어있는 라이브러리를 땡기면  
+해당 라이브러리 내부에 사용하는 라이브러리들을 자동 빈등록해주는 설정파일이 아에 들어있다.
+
+JDBC쪽 라이브러리 하나 까보면
+```java
+//자동등록 내부에Configuration 있음 after 이클래스생성이후 동작하도록
+@AutoConfiguration(after = DataSourceAutoConfiguration.class)
+//if문 같은것 저런 클래스 있어야동작하도록(빈등록순서)
+@ConditionalOnClass({ DataSource.class, JdbcTemplate.class })
+@ConditionalOnSingleCandidate(DataSource.class)
+@EnableConfigurationProperties(JdbcProperties.class)
+//설정추가
+@Import({ DatabaseInitializationDependencyConfigurer.class, 
+JdbcTemplateConfiguration.class,
+NamedParameterJdbcTemplateConfiguration.class })
+public class JdbcTemplateAutoConfiguration {
+}
+```
+이런식으로 1차적으로 설정등록 코드가 있고 하나더 들어가서 `@Import`의 `JdbcTemplateConfiguration.class`확인  
+
+```java
+@Configuration(proxyBeanMethods = false)
+//JdbcOperations 빈이 없을 때 동작 = 사용자가 새로 JdbcTemplate빈 등록했을때는 동작하지말라는 뜻
+@ConditionalOnMissingBean(JdbcOperations.class) //JdbcOperations는 JdbcTemplate의 인터페이스 이걸로 사용자가 등록했는지 알수있
+class JdbcTemplateConfiguration {
+@Bean
+@Primary
+JdbcTemplate jdbcTemplate(DataSource dataSource, JdbcProperties properties) 
+{
+JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+JdbcProperties.Template template = properties.getTemplate();
+jdbcTemplate.setFetchSize(template.getFetchSize());
+jdbcTemplate.setMaxRows(template.getMaxRows());
+if (template.getQueryTimeout() != null) {
+jdbcTemplate.setQueryTimeout((int) 
+template.getQueryTimeout().getSeconds());
+}
+return jdbcTemplate;
+}
+}
+```
+
+#### 여담
+
+Auto Configuration = 자동설정 = 자동등록
+
+자동설정 : 컴퓨터 용어에서는 환경 설정, 설정이라는 뜻(빈들을 자동으로 등록해서 스프링이 동작하는 환경을 자동으로 설정)  
+자동등록 : 컴퓨터라고 하면 CPU, 메모리등을 배치해야 컴퓨터가 동작한다. 이렇게 배치하는 것을 구성 자동 구성은 스프링 실행에 필요한 빈들을 자동으로 배
+치해주는 것  
+
+Auto Configuration은 자동 구성이라는 단어를 주로 사용(자동 구성이 어떻게 동작하는지 내부 원리 이해)  
+Configuration이 단독으로 사용될 때는 설정이라는 단어를 사용(특정 조건에 맞을 때 설정이 동작하도록 한다)  
+
