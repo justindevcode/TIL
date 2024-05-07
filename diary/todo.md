@@ -5433,3 +5433,124 @@ https://zeroco.tistory.com/105
 https://hanseom.tistory.com/174#recentComments  
 https://devoong2.tistory.com/entry/Kafka-%EC%BB%A8%EC%8A%88%EB%A8%B8%EC%9D%98-Poll-%EB%8F%99%EC%9E%91%EA%B3%BC%EC%A0%95-%EB%B0%8F-maxpollrecords-%EC%97%90-%EB%8C%80%ED%95%9C-%EC%98%A4%ED%95%B4  
 https://devlog-wjdrbs96.tistory.com/442  
+
+---
+## 20240508
+### 스프링 Conditional
+
+#### 자동 구성 직접 만들기
+실시간으로 자바 메모리 사용량을 웹으로 확인하는 예제이다.  
+
+```java
+@Slf4j
+public class MemoryFinder {
+ 
+ public Memory get() {
+ long max = Runtime.getRuntime().maxMemory();
+ long total = Runtime.getRuntime().totalMemory();
+ long free = Runtime.getRuntime().freeMemory();
+ long used = total - free;
+ return new Memory(used, max);
+ }
+ @PostConstruct
+ public void init() {
+ log.info("init memoryFinder");
+ }
+}
+```
+JVM에서 메모리 정보를 실시간으로 조회하는 기능이다.  
+max 는 JVM이 사용할 수 있는 최대 메모리, 이 수치를 넘어가면 OOM이 발생한다.  
+total 은 JVM이 확보한 전체 메모리(JVM은 처음부터 max 까지 다 확보하지 않고 필요할 때 마다 조금씩 확보한다.)  
+free 는 total 중에 사용하지 않은 메모리(JVM이 확보한 전체 메모리 중에 사용하지 않은 것)  
+used 는 JVM이 사용중인 메모리이다. ( used = total - free )  
+(크게 중요한 부분은아님 참고만 이런거로 컨트롤러에서 자료출력 예제란것)  
+
+```java
+@Configuration
+public class MemoryConfig {
+ @Bean
+ public MemoryController memoryController() {
+ return new MemoryController(memoryFinder());
+ }
+ @Bean
+ public MemoryFinder memoryFinder() {
+ return new MemoryFinder();
+ }
+}
+```
+위의 기능을 아에 다른 라이브러리나 기능이라고 생각해서 내가 개발할곳에서 사용하고싶음 -> 기본적으로 내가 직접 빈등록해줘야함  
+
+#### 빈등록 개선법 @Conditional
+
+```java
+@Slf4j
+public class MemoryCondition implements  {
+ @Override
+ public boolean matches(ConditionContext context, AnnotatedTypeMetadata
+metadata) {
+ String memory = context.getEnvironment().getProperty("memory");
+ log.info("memory={}", memory);
+ return "on".equals(memory);
+ }
+}
+```
+`Condition`인터페이스를 구현해서 설정정보에 `memory=on`이라고 적힐때만 작동하게 할 수 있음  
+
+``` java
+@Configuration
+@Conditional(MemoryCondition.class) //추가
+public class MemoryConfig {
+ @Bean
+ public MemoryController memoryController() {
+ return new MemoryController(memoryFinder());
+ }
+ @Bean
+ public MemoryFinder memoryFinder() {
+ return new MemoryFinder();
+ }
+}
+```
+빈등록하는곳에 `@Conditional(MemoryCondition.class)`이렇게 넣어주면 `memory=on`이라고 적힐때만 작동  
+MemoryCondition 의 matches() 를 실행해보고 그 결과가 true 이면 MemoryConfig 는 정상 동작한다  
+`#java -Dmemory=on -jar project.jar`이런식으로 동작할떄 넣는 그것임  
+
+참고로 `getEnvironment`이거 함수 이용해서  
+VM Options: java -Dmemory=on -jar project.jar
+Program arguments: (-- 가 있으면 스프링이 환경 정보로 사용) java -jar project.jar --memory=on
+application.properties파일: memory=on  
+이런 다양한 방면의 설정정보 저 함수로 뽑을 수 있음  
+
+#### @Conditional - 다양한 기능
+
+```java
+@Configuration
+//@Conditional(MemoryCondition.class) //추가
+@ConditionalOnProperty(name = "memory", havingValue = "on") //추가
+public class MemoryConfig {
+ @Bean
+ public MemoryController memoryController() {
+ return new MemoryController(memoryFinder());
+ }
+ @Bean
+ public MemoryFinder memoryFinder() {
+ return new MemoryFinder();
+ }
+}
+```
+`@Conditional`이걸 자주 사용하니깐 부트에서 아에 세부사항별로 미리 만들어둔 어노테이션 있음
+`@ConditionalOnProperty(name = "memory", havingValue = "on")` 이렇게 쓰면 따로 클레스 선언할 필요없이 바로 했던것 적용됨  
+
+예시
+
+@ConditionalOnClass , @ConditionalOnMissingClass  
+클래스가 있는 경우 동작한다. 나머지는 그 반대  
+@ConditionalOnBean , @ConditionalOnMissingBean  
+빈이 등록되어 있는 경우 동작한다. 나머지는 그 반대  
+@ConditionalOnProperty  
+환경 정보가 있는 경우 동작한다.  
+@ConditionalOnResource  
+리소스가 있는 경우 동작한다.  
+@ConditionalOnWebApplication , @ConditionalOnNotWebApplication  
+웹 애플리케이션인 경우 동작한다.  
+@ConditionalOnExpression  
+SpEL 표현식에 만족하는 경우 동작한다  
