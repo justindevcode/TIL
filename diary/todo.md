@@ -5554,3 +5554,149 @@ public class MemoryConfig {
 웹 애플리케이션인 경우 동작한다.  
 @ConditionalOnExpression  
 SpEL 표현식에 만족하는 경우 동작한다  
+
+---
+## 20240514
+### 스프링 순수라이브러리와 자동설정  
+
+#### 라이브러리제작
+라이브러리만들 녀석의(메모리출력) 프로젝트
+```
+plugins {
+ id 'java'
+}
+group = 'memory'
+sourceCompatibility = '17'
+repositories {
+ mavenCentral()
+}
+dependencies {
+ implementation 'org.springframework.boot:spring-boot-starter-web:3.0.2'
+ compileOnly 'org.projectlombok:lombok:1.18.24'
+ annotationProcessor 'org.projectlombok:lombok:1.18.24'
+ testImplementation 'org.springframework.boot:spring-boot-starter-test:3.0.2'
+}
+test {
+ useJUnitPlatform()
+}
+```
+부트를 쓰면 실행가능jar가 만들어지기 때문에 순수 내 코드만 jar로 만들기위해 부트플러그인 안씀  
+
+예시 메모리 코드
+```java
+@Slf4j
+public class MemoryFinder {
+ public Memory get() {
+ long max = Runtime.getRuntime().maxMemory();
+ long total = Runtime.getRuntime().totalMemory();
+ long free = Runtime.getRuntime().freeMemory();
+ long used = total - free;
+ return new Memory(used, max);
+ }
+ @PostConstruct
+ public void init() {
+ log.info("init memoryFinder");
+ }
+}
+
+.
+.
+.
+등등 컨트롤러까지 코드 있음 
+```
+
+그리고 이 프로젝트를 `./gradlew clean build` 빌드하면 순수 jar가 만들어짐
+
+#### 라이브러리 사용
+
+`project-v1/libs`폴더 생성 -> 만든 `memory-v1.jar` 복붙
+
+```
+plugins {
+ id 'org.springframework.boot' version '3.0.2'
+ id 'io.spring.dependency-management' version '1.1.0'
+ id 'java'
+}
+group = 'hello'
+version = '0.0.1-SNAPSHOT'
+sourceCompatibility = '17'
+configurations {
+ compileOnly {
+ extendsFrom annotationProcessor
+ }
+}
+repositories {
+ mavenCentral()
+}
+dependencies {
+implementation files('libs/memory-v1.jar') //추가
+ implementation 'org.springframework.boot:spring-boot-starter-web'
+ compileOnly 'org.projectlombok:lombok'
+ annotationProcessor 'org.projectlombok:lombok'
+ testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+tasks.named('test') {
+ useJUnitPlatform()
+}
+```
+사용할곳에 `implementation files('libs/memory-v1.jar')`추가
+
+여기서 문제는 이 라이브러리를 사용하려면 내가 해당 라이브러리의 클래스를 빈으로 등록해줘야함...
+
+```java
+@Configuration
+public class MemoryConfig {
+ 
+ @Bean
+ public MemoryFinder memoryFinder() {
+ return new MemoryFinder();
+ }
+ 
+ @Bean
+ public MemoryController memoryController() {
+ return new MemoryController(memoryFinder());
+ }
+}
+```
+이게맞나... 가져가 쓴 라이브러리의 어떤 클레스를 어떤식으로 등록해줘야하는지 알아야함..
+
+
+#### 라이브러리 자체에서 자동구성 구현
+
+라이브러리 프로젝트에 자동구성추가
+
+```java
+@AutoConfiguration
+@ConditionalOnProperty(name = "memory", havingValue = "on")
+public class MemoryAutoConfig {
+ @Bean
+ public MemoryController memoryController() {
+ return new MemoryController(memoryFinder());
+ }
+ @Bean
+ public MemoryFinder memoryFinder() {
+ return new MemoryFinder();
+ }
+}
+```
+vm옵셥으로 memory=on 설정되어야지 빈등록되도록 해둠  
+
+하나 더 해줘야하는데 이 설정파일을 `src/main/resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`라는 폴더속파일에
+`memory.MemoryAutoConfig`라고 설정파일을 써줘야함  
+
+스프링에서 실제 라이브러리들 사용할때 위의 파일위치에서 `memory.MemoryAutoConfig`이 클래스를 읽어서 빈등록해면 되겠구나 하고 확인하는 파일임  
+
+`./gradlew clean build`이 라이브러리를 다시 빌드해서  
+
+사용할프로젝트 `project-v2/libs`에 `memory-v2.jar`를 다시 복붙하고 `implementation`추가   
+```
+dependencies {
+ implementation files('libs/memory-v2.jar') //추가
+ implementation 'org.springframework.boot:spring-boot-starter-web'
+ compileOnly 'org.projectlombok:lombok'
+ annotationProcessor 'org.projectlombok:lombok'
+ testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+```
+
+이러고 `@ConditionalOnProperty(name = "memory", havingValue = "on")`이거 없었으면 그냥 아무것도 안해도 등록됐을건데 설정있어서 `-Dmemory=on`추가해고 스프링돌려주면 자동등록완료  
