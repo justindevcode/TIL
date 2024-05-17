@@ -5700,3 +5700,107 @@ dependencies {
 ```
 
 이러고 `@ConditionalOnProperty(name = "memory", havingValue = "on")`이거 없었으면 그냥 아무것도 안해도 등록됐을건데 설정있어서 `-Dmemory=on`추가해고 스프링돌려주면 자동등록완료  
+
+---
+## 20240517
+### java 메모리 영역 
+
+#### 참조 자료
+https://lucas-owner.tistory.com/38  
+
+
+#### JVM
+
+JVM = 자바의 가상머신 OS에 상관없이 실행할 수 있는것이 장점이다. (JVM 설치만 하면 어떤 운영체제에서든 java 파일을 실행할 수 있다.)  
+
+실행순서  
+java 파일을 컴파일러(Compiler)를 통해 .class 파일로 변환한다.  
+class 파일을 JVM 의 ClassLoader(클래스로더)에게 보낸다.  
+클래스로더에서 JVM 런타임 영역으로 로딩(할당)하여 메모리에 올린다.  
+
+#### JVM의 RunTime Data Area
+
+Java 메모리 영역을 알기 위해선 런타임 데이터 영역에 대해서 알아야한다.  
+클래스 로더가 .class 파일을 이 영역에 올리기 때문이다.  
+런타임 데이터 영역에는 5가지 영역이 존재한다.  
+* Static Area(Method Area)
+* Heap Area
+* Stack Area
+* PC Register
+* Native Method Stack
+
+![1](https://github.com/justindevcode/TIL/assets/108222981/530ead3c-3240-4d8f-8be0-3809c1ff27b7)  
+
+#### Java의 메모리 영역
+자바 프로그램을 실행 하게되면 JVM(Java Virtual Machine)은 OS 로 부터 메모리를 할당 받는다, 할당 받은 메모리를 자바 프로그램에 맞게 여러개의 영역으로 나누어 사용하게 된다.  
+
+JVM의 메모리는 크게 3가지로 이루어져 있다.  
+Heap 영역.  
+Stack 영역.  
+Static(Method) 영역.  
+
+#### Java의 변수 종류
+
+변수는 선언 위치에 따라 구분짓게 된다.  
+4가지의 종류가 존재한다. (클래스 변수, 인스턴스 변수, 지역변수, 매게변수)  
+
+```java
+public class Variable { 
+
+	public static int age = 20; // 클래스 변수(전역 변수)
+    
+    int height = 60; // 인스턴스 변수(전역 변수)
+    
+    public static void main(String[] args) { // 매개변수(파라미터)
+ 		int size = 50; // 지역변수
+        
+    }
+}
+```
+
+|변수종류|선언위치|설명|생성시기|소멸시기|저장메모리|
+|---|---|---|---|---|---|
+|클래스 변수 (Static variable)|클래스 영역|static 키워드가 붙고 여러 객체에서 공통으로 사용 할 때 사용|클래스가 메모리에 올라갈때|프로그램 종료 시|Static|
+|인스턴스 변수(Instance variable)|클래스 영역|클래스 영역에서 static이 아닌 변수|인스턴스가 생성될 때|인스턴스 소멸시|Heap|
+|지역 변수(Local variable)|메서드 영역|메서드 내부에서 선언된다. 초기 값을 지정해야 사용가능.|블록 내에서 변수의 선언문이 실행 될 때|블록을 벗어날 때|Stack|
+
+
+#### Static (Method) 영역
+
+Static 영역 혹은 Method 영역이라고 불린다. 클래스 변수나, static 으로 선언된 것들이 해당 메모리 영역에 저장된다.  
+
+* JVM이 실행될 때 Class 가 로딩될 때 생성.
+* Class의 정보, Static 변수(클래스 변수), 생성자(Constructor), 메소드(Method)와 같은 것들을 저장한다.
+* Static 영역에 있는 것은 어디서든 접근 가능 하다.
+* JVM이 종료 시(프로그램이 종료 시) 메모리에서 해제 된다. 즉 프로그램이 종료되기 전까진 메모리 상에 존재하게된다. 그렇기 때문에 어디서든 접근이 가능한 것이며, 무분별 하게 사용될 경우 메모리 부족 현상이 발생할 수 있다.
+
+#### Heap 영역
+
+인스턴스를 생성할 때 사용되는 메모리 영역이다.  
+참조형 데이터 객체의 실제 데이터가 저장되는 공간이다. Stack 영역에서 실제데이터가 존재하는 Heap 영역의 참조값을 가지고 있다.  
+new 키워드로 인스턴스를 생성 할 때, Heap 영역에는 생성된 객체가 저장, Stack 영역에서 생성된 객체에 대한 주소 값(Reference)이 저장된다.  
+
+
+* new 를 사용해 객체를 생성할 때 저장된다.
+* 참조형 데이터 타입이 저장된다. (String, 배열(array), enum, class, interface), Object
+* Heap 영역의 데이터들을 가르키는 Reference(참조 주소)는 Stack영역에 적재된다.
+* Reference를 통해서만 Heap 영역의 데이터들에 접근, 핸들링 할 수 있다.
+* 호출이 종료되도 삭제되지 않는다. -> GC(가비지 컬렉터)에 의해 메모리에서 해제된다.
+* 쓰레드가 몇개가 존재하든, 단 하나의 영역만 존재한다. (Stack 영역의 경우 쓰레드 별로 1개씩 생성된다.)
+
+![1](https://github.com/justindevcode/TIL/assets/108222981/45416e7f-1b36-481a-b4e7-5b50a39e73bd)  
+
+* String name = "lucas"; 이라는 줄이 있을때.
+* "lucas" 는 Heap 영역에 저장.
+* name 부분은 Stack 영역에 저장. (name 은 주소를 갖고 있으며 -> Heap 영역의 "lucas" 를 가르킨다.)
+
+#### Stack 영역
+
+* 기본 자료형(원시 자료형, Primitive type), 지역변수, 매개변수가 저장되는 메모리. (int, double, boolean, byte)
+* 메서드 내부의 기본자료형에 해당하는 변수 적재.
+* Heap 영역에 생성된 데이터의 참조값이 할당됨. -> *그림 : Heap, Stack 저장되는부분 참고.
+* 메소드가 호출될 때 메모리에 할당, 메서드 종료시 메모리에서 삭제됨.
+* 자료구조 Stack의 구조이다, LIFO(Last In First Out)
+* 각 Thread 마다 자신만의 Stack 을 가진다. (1:1) - (Thread : Stack)
+* Thread는 내부적으로 Static, Heap, Stack 영역을 가진다.
+* Thread는 다른 Thread에 접근 할 수 없지만, static, Heap 영역을 공유하여 사용 가능.
