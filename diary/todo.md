@@ -5804,3 +5804,85 @@ new 키워드로 인스턴스를 생성 할 때, Heap 영역에는 생성된 객
 * 각 Thread 마다 자신만의 Stack 을 가진다. (1:1) - (Thread : Stack)
 * Thread는 내부적으로 Static, Heap, Stack 영역을 가진다.
 * Thread는 다른 Thread에 접근 할 수 없지만, static, Heap 영역을 공유하여 사용 가능.
+
+---
+## 20240518
+### 스프링 자동구성의 이해
+
+우리는 `resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports` 이런 긴 파일에 설정 클레스를 넣어주니 그것이 등록되었다.  
+어떤 과정을 거치기에 가능 할까?  
+
+#### 동작순서이해
+
+```java
+@SpringBootApplication
+public class AutoConfigApplication {
+ public static void main(String[] args) {
+ SpringApplication.run(AutoConfigApplication.class, args);
+ }
+}
+```
+스프링 부트의 메인 함수를 보면  
+ran() -> AutoConfigApplication이 클래스 바로 설정정보로 사용 -> SpringBootApplication어노테이션 ->   
+
+```java
+@SpringBootConfiguration
+@EnableAutoConfiguration
+@ComponentScan(excludeFilters = { @Filter(type = FilterType.CUSTOM, classes =
+TypeExcludeFilter.class),
+@Filter(type = FilterType.CUSTOM, classes =
+AutoConfigurationExcludeFilter.class) })
+public @interface SpringBootApplication {...}
+```
+@EnableAutoConfiguration ->  
+
+```java
+@AutoConfigurationPackage
+@Import(AutoConfigurationImportSelector.class)
+public @interface EnableAutoConfiguration {…}
+```
+@Import -> AutoConfigurationImportSelector.class???
+
+쭉 따라 들어가보면 Import가 있는데 여기에는 원래 설정클레스만 넣었는데 ImportSelector란것이 있다.  
+
+#### ImportSelector
+
+기존방식(정적방식)  
+```java
+@Configuration
+@Import({AConfig.class, BConfig.class})
+public class AppConfig {...}
+```
+원래는 이렇게 사용했다. 근데 저 클래스 파일을 동적으로 바꾸고 싶으면 어떻게 해야할까?  
+
+이때 사용하는것이 `ImportSelector`
+```java
+package org.springframework.context.annotation;
+public interface ImportSelector {
+String[] selectImports(AnnotationMetadata importingClassMetadata);
+ //...
+}
+```
+이런 인터페이스 인데 어려운것 없다. `selectImports`함수가 실행되고 그 리턴값의 `String[]`들 이름으로 파일을 찾아 그 설정정보를 실행하는것이다.
+
+예시
+```java
+public class HelloImportSelector implements ImportSelector {
+ @Override
+ public String[] selectImports(AnnotationMetadata importingClassMetadata) {
+ return new String[]{"hello.selector.HelloConfig"};
+ }
+}
+```
+여기서는 간단히 스트링값으로 설정정보 클래스의 위치를 넘겼는데 안에서 if문을 쓰던 해서 내맘데로 바꿀 수 있다.  
+
+즉 아까 위의 @EnableAutoConfiguration ->@Import -> AutoConfigurationImportSelector.class는
+그냥 `resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`의 파일을 자바동적코드로 읽어서 스트링값을 취합한다음 그 설정클래스를 등록하는것이다.  
+
+정말 상세하게는 다른 순서나 내부 동작 제거할거는 제거하고 이런 과정이 있긴하지만 이정도만 이해해도 충분하다.  
+
+#### 여담
+
+@AutoConfiguration도 설정파일이라 @Configuration이 있긴한데 일반 스프링 설정과 라이프사이클이 다르기 때문에 컴포넌트 스캔의 대상이 되면 안된다 그래서 `resources/META-INF...`이런 파일에 명시를 따로 해주는것 컴포넌트 스캔에서는 `@AutoConfiguration` 을 제외하는 `AutoConfigurationExcludeFilter` 필터가 포함되어 있다.  
+
+`@AutoConfiguration`을 직접 사용할일은 정말 라이브러리를 직접 만들때밖에없다. 하지만 이 빈이 왜 자동으로 등록됐는지 확인하려면 역으로 찾는 과정이 필요한데 이때 코드는 읽을 수 있어야한다. 그래서 이정도 공부해두는것  
