@@ -5886,3 +5886,62 @@ public class HelloImportSelector implements ImportSelector {
 @AutoConfiguration도 설정파일이라 @Configuration이 있긴한데 일반 스프링 설정과 라이프사이클이 다르기 때문에 컴포넌트 스캔의 대상이 되면 안된다 그래서 `resources/META-INF...`이런 파일에 명시를 따로 해주는것 컴포넌트 스캔에서는 `@AutoConfiguration` 을 제외하는 `AutoConfigurationExcludeFilter` 필터가 포함되어 있다.  
 
 `@AutoConfiguration`을 직접 사용할일은 정말 라이브러리를 직접 만들때밖에없다. 하지만 이 빈이 왜 자동으로 등록됐는지 확인하려면 역으로 찾는 과정이 필요한데 이때 코드는 읽을 수 있어야한다. 그래서 이정도 공부해두는것  
+
+---
+## 20240520
+### 스프링부트 외부설정기초
+
+우리가 개발하다보면 테스트서버의 DB, 운영서버의 DB는 다르게 둬야한다. 이때 이 다른 주소를 어떻게 바꿔낄까?
+
+옛날에는 진짜 테스트서버 DB주소 넣고 빌드 -> jar1  
+운영서버 DB주소코드바꾸고 빌드 -> jar2  
+
+이런식으로 2개를 따로 사용기도 했는데 이러면 중간에 어떤일이 발생할지 아무도 모르고 번거롭다.  
+
+그래서 실행시점 외부설정값 주입을 하게된다.  
+
+> 유지보수하기 좋은 애플리케이션 개발의 가장 기본 원칙은 변하는 것과 변하지 않는 것을 분리하는 것이다.
+
+#### 외부설정
+일반적으로 jar같은 파일을 실행할때 외부설정을 읽어드릴수 있게 하는 방법은 4가지가 있다.  
+
+* OS 환경 변수: OS에서 지원하는 외부 설정, 해당 OS를 사용하는 모든 프로세스에서 사용 (윈도우, 맥 os에 직접설정)
+* 자바 시스템 속성: 자바에서 지원하는 외부 설정, 해당 JVM안에서 사용
+* 자바 커맨드 라인 인수: 커맨드 라인에서 전달하는 외부 설정, 실행시 main(args) 메서드에서 사용
+* 외부 파일(설정 데이터): 프로그램에서 외부 파일을 직접 읽어서 사용
+	* 애플리케이션에서 특정 위치의 파일을 읽도록 해둔다. 예) data/hello.txt
+
+#### OS 환경변수  
+
+윈도우 `set`  
+MAC,리눅스 `printenv`  
+
+윈도우에서 결과  
+
+```
+C:\Users\aa>set
+ALLUSERSPROFILE=C:\ProgramData
+APPDATA=C:\Users\aa\AppData\Roaming
+CommonProgramFiles=C:\Program Files\Common Files
+USERNAME=aa
+USERPROFILE=C:\Users\aa
+windir=C:\WINDOWS
+등등...
+```
+이런 값들 실제로 등록할 수 있고 자바에서 읽을 수 있음  
+
+```java
+@Slf4j
+public class OsEnv {
+ public static void main(String[] args) {
+ Map<String, String> envMap = System.getenv();
+ for (String key : envMap.keySet()) {
+ log.info("env {}={}", key, System.getenv(key));
+ }
+ }
+}
+```
+이런식으로 사용하면 위의 값들 키밸류 값으로 다 읽을 수 있어서 OS에 직접 주소 변수 등록해서 자바에서 꺼내서 쓸 수 있는것  
+
+다만 이 방식은 같은 컴퓨터에서 스프링을 실행하든, 파이썬을 실행하든, 노드를 실행하든 모두 같은 변수 꺼내서 쓰는것임  
+나는 자바안에서만 유효한 외부설정을 사용하고싶다 하면 다른방법 사용해야함 
