@@ -5945,3 +5945,151 @@ public class OsEnv {
 
 다만 이 방식은 같은 컴퓨터에서 스프링을 실행하든, 파이썬을 실행하든, 노드를 실행하든 모두 같은 변수 꺼내서 쓰는것임  
 나는 자바안에서만 유효한 외부설정을 사용하고싶다 하면 다른방법 사용해야함 
+
+---
+## 20240521
+### 스프링 시큐리티 버전, 커스텀로그인, 암호화메소드
+
+#### 시큐리티 버전
+
+스프링 시큐리티는 부트 2 -> 3으로 오면서 여러번 바뀌었다. 대강 확인  
+새로운 버전이 출시될 때마다 GitHub의 Spring 리포지토리에서 Security의 Release 항목을 통해 변경된 점을 확인할 수 있다.  
+
+* 스프링 부트 2.X.X ~ 2.6.X (스프링 5.X.X ~ 5.6.X)
+```java
+public class WebSecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+
+	http
+		.authorizeRequests()
+			.antMatchers("/").authenticated()
+			.anyRequest().permitAll();
+
+    }
+}
+```
+
+* 스프링 부트 2.7.X ~ 3.0.X (스프링 5.7.X M2 ~ 6.0.X)
+```java
+public class SpringSecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+        http
+		.authorizeHttpRequests()
+			.requestMatchers("/admin").hasRole("ADMIN")
+			.anyRequest().authenticated();
+
+        return http.build();
+    }
+}
+```
+
+* 스프링 부트 3.1.X ~ (스프링 6.1.X ~ ) 3.1.X 버전 부터 람다형식 표현 필수
+```java
+public class SpringSecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+        http
+		.authorizeHttpRequests((auth) -> auth
+			.requestMatchers("/login", "/join").permitAll()
+			.anyRequest().authenticated()
+        );
+
+        return http.build();
+    }
+}
+```
+
+#### 커스텀 로그인
+
+이전에 설정한 접근권한에서 로그인이 필요한부부을 권한없이 접근하면 그냥 페이지가 먹통이 되었는데 커스텀로그인도 구현해서 권한이 필요한경우 그쪽으로 갈 수 있게 구현해보자  
+
+
+* login.mustache
+```html
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+</head>
+<body>
+    login page
+    <hr>
+    <form action="/loginProc" method="post" name="loginForm">
+        <input id="username" type="text" name="username" placeholder="id"/>
+        <input id="password" type="password" name="password" placeholder="password"/>
+        <input type="submit" value="login"/>
+    </form>
+</body>
+</html>
+```
+
+* 페이지 컨트롤러 등록
+```java
+@Controller
+public class LoginController {
+
+    @GetMapping("/login")
+    public String loginP() {
+
+        return "login";
+    }
+}
+```
+
+* 시큐리티 설정 새로추가
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception{
+
+        http
+                .authorizeHttpRequests((auth) -> auth
+                        .requestMatchers("/", "/login", "/loginProc").permitAll()
+                        .requestMatchers("/admin").hasRole("ADMIN")
+                        .requestMatchers("/my/**").hasAnyRole("ADMIN", "USER")
+                        .anyRequest().authenticated()
+                );
+
+
+//새로추가 부분
+        http
+                .formLogin((auth) -> auth.loginPage("/login") //로그인 권한이 필요할때 우리가 만든 주소 컨트롤러의 주소
+                        .loginProcessingUrl("/loginProc") // 아이디 비밀번호 값이 넘어오는 html의 from 주소 이걸 받아서 아디비번을 시큐리티가 알아서해줌
+                        .permitAll() //이 페이지의 접근권한은 모두 허용
+                );
+
+        http
+                .csrf((auth) -> auth.disable()); //시큐리티 기본 사이트 위변조 방지 csrf 해제 (기본적용인데 뭔 토큰 보내줘야해서 일단 비활성)
+
+
+        return http.build();
+    }
+}
+```
+
+#### 시큐리티가 제공하는 암호화 클래스 빈등록
+
+```java
+@Bean
+public BCryptPasswordEncoder bCryptPasswordEncoder() {
+
+    return new BCryptPasswordEncoder();
+}
+```
+SecurityConfig 클레스에 그냥 새로운 빈하나 등록해준다.  
+비번같은걸 암호화해서 저장해야하는데 그걸 시큐리티가 제공해준다. 다만 빈등록해야함  
+단방향 해시 함수이다.  
+
