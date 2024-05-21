@@ -6093,3 +6093,168 @@ SecurityConfig 클레스에 그냥 새로운 빈하나 등록해준다.
 비번같은걸 암호화해서 저장해야하는데 그걸 시큐리티가 제공해준다. 다만 빈등록해야함  
 단방향 해시 함수이다.  
 
+---
+## 20240522
+### Webflux 기본 스프링 mvc로 비슷하게 구현
+
+webflux가 어떠한 느낌인지 이해하기 위해서 그냥 스프링 mvc에 비동기처리를 만들어보겠다.  
+
+1번 엔드포인트에서 비동기로 데이터를 받고  
+1번 엔드포인트에서 연결을 끊지않고 2번 엔드포인트의 정보를 지속적으로 1번 엔드포인트에 출력
+
+* 의존성
+```java
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+```
+
+* 필터단에서 엔드포인트 2개생성
+```java
+@Configuration
+public class MyFilterConfig {
+
+    @Autowired
+    private EventNotify eventNotify;
+
+    @Bean
+    public FilterRegistrationBean<Filter> addFilter() {
+        System.out.println("필터 등록됨");
+        FilterRegistrationBean<Filter> bean = new FilterRegistrationBean<>(new MyFilter(eventNotify));
+        bean.addUrlPatterns("/sse");
+        return bean;
+    }
+
+    @Bean
+    public FilterRegistrationBean<Filter> addFilter2() {
+        System.out.println("필터 등록됨");
+        FilterRegistrationBean<Filter> bean = new FilterRegistrationBean<>(new MyFilter2(eventNotify));
+        bean.addUrlPatterns("/add");
+        return bean;
+    }
+}
+```
+
+* DTO
+```java
+@Component
+public class EventNotify {
+    @Getter
+    private List<String> events = new ArrayList<>();
+
+    @Setter
+    private boolean change = false;
+
+    public void add(String data) {
+        events.add(data);
+        change = true;
+    }
+
+    public boolean getChange() {
+        return change;
+    }
+
+}
+```
+
+* 엔트포인트1 필터
+```java
+public class MyFilter implements Filter {
+
+    private EventNotify eventNotify;
+
+    public MyFilter(EventNotify eventNotify) {
+        this.eventNotify = eventNotify;
+    }
+
+    @Override
+    public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
+        System.out.println("필터 실행됨");
+
+        HttpServletResponse servletResponse2 = (HttpServletResponse) servletResponse;
+
+//        servletResponse2.setContentType("text/plain; charset=utf-8"); //일반
+        servletResponse2.setContentType("text/event-stream; charset=utf-8"); //스트림을 계속 주는애구나
+
+
+        /**
+         * 플럭스 부분이라 칭할 수 있음 = WebFlux
+         *
+         * 이런 기술은 WebFlux 나 MVC나 어디서나 쓸 수 있음
+         * WebFlux는 비동기 단일 쓰레드 이벤트루프통해서
+         * MVC는 요청마다 쓰레드로 동작 (이런 지속연결을 요청마다 쓰레드 생성해서 붙들고있으면 못버티는게 문제)
+         *
+         * 이런 구성의 동작의 표준이 있음 = reactive-streams
+         * 지금 간단한 예시로는 엉망진창이지만
+         * 위의 규칙을 철저히 지키면서 자바 코드를 내가 만들수도 있는것
+         *
+         * reactive-streams 라이브러리를 쓰면 표준을 지켜서 응답을 할 수 있다.
+         */
+        PrintWriter out = servletResponse2.getWriter();
+        for (int i = 0; i < 5; i++) {
+            out.print("응답 : " + i + "\n");
+            out.flush();
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+
+        }
+
+        /**
+         * SEE부분이라고 칭할 수 있음
+         *
+         * SSE Emitter같은거 쓰면 편하게 사용가능
+         */
+        while (true) { //이거때문에 위에꺼 전달 끝나고 연결이 종료가 안됨 (지속연결)
+            try {
+                if (eventNotify.getChange()) {
+                    int lastIndex = eventNotify.getEvents().size() - 1;
+                    out.println("응답 : " + eventNotify.getEvents().get(lastIndex) + "\n");
+                    out.flush();
+                    eventNotify.setChange(false);
+                }
+                Thread.sleep(1);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        /**
+         * WebFlux -> reactive-streams 이게 적용된 stream 을 사용할 수 있는것 (비동기 단일스레드 동작)
+         * Servlet MVC -> reactive-streams 이게 적용된 stream 을 사용할 수 있는것 (멀티 스레드)
+         */
+
+    }
+}
+```
+
+* 엔트포인트2 필터
+```java
+public class MyFilter2 implements Filter {
+
+    private EventNotify eventNotify;
+
+    public MyFilter2(EventNotify eventNotify) {
+        this.eventNotify = eventNotify;
+    }
+    @Override
+    public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain filterChain) throws IOException, ServletException {
+        System.out.println("필터2 실행됨");
+
+        eventNotify.add("새로운 데이터");
+
+    }
+}
+```
+
+상세 내용은 필터1 주석참고  
+
+#### 참고
+https://www.youtube.com/watch?v=o6t2Q017J-s&list=PL93mKxaRDidFH5gRwkDX5pQxtp0iv3guf&index=4  
+
