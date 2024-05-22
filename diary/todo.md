@@ -6258,3 +6258,145 @@ public class MyFilter2 implements Filter {
 #### 참고
 https://www.youtube.com/watch?v=o6t2Q017J-s&list=PL93mKxaRDidFH5gRwkDX5pQxtp0iv3guf&index=4  
 
+---
+## 20240523
+### WebFlux Reactive-Streams 구현해보기
+
+어떤형식을 지키면 된다는것이냐 라는걸 직접 간단히 구현 위의 프로젝트 그대로 사용
+reactivestreams라이브러리에 Processor, Publisher, Subscriber, Subscription 4개 인터페이스 생기는데 이거 구현하면 되는것임  
+다만 Processor안쓸건데 Processor는 Publisher와 Subscriber를 그냥 하나의 클래스에 모아둔 클래스입니다.  
+사용하면 두 레퍼런스를 다가지고 있기 때문에 응용할 때 편한데 몰라두되요.  
+
+* 의존성
+```java
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+	//reactive-streams 인터페이스 따로추가
+	// https://mvnrepository.com/artifact/org.reactivestreams/reactive-streams
+	implementation group: 'org.reactivestreams', name: 'reactive-streams', version: '1.0.4'
+	//reactivestreams라이브러리에 Processor, Publisher, Subscriber, Subscription 4개 인터페이스 생기는데
+	// 이거 구현하면 되는것임
+}
+```
+
+* 메인함수
+```java
+//WebFlux = 단일스레드, 비동기 + Stream을 통해 백프레셔가 적용된 데이터만큼 간헐적 응답이 가능하다. + 데이터 소비가 끝나면 응답이 종료
+//SSE 적용(Servlet, WebFulx) = 데이터 소비가 끝나도 Stream 계속유지
+public class App {
+
+    public static void main(String[] args) {
+        MyPub myPub = new MyPub();
+        MySub mySub = new MySub();
+
+        myPub.subscribe(mySub);
+    }
+}
+```
+
+* 퍼블리셔
+```java
+public class MyPub implements Publisher<Integer> { //<Integer>는 나는 숫자를 보내줄께
+
+
+    Iterable<Integer> its = Arrays.asList(1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
+
+    @Override
+    public void subscribe(Subscriber<? super Integer> subscriber) {
+        System.out.println("구독자 : 신문사야 나 너희 신문 볼께");
+        System.out.println("신문사 : 구독 정보를 만들어서 줄테니 기다려");
+        MySubscription subscription = new MySubscription(subscriber, its);
+        System.out.println("신문사 : 구독 정보 생성 완료 했어 잘 받아!");
+        subscriber.onSubscribe(subscription);
+    }
+}
+```
+
+* 구독자
+```java
+public class MySub implements Subscriber<Integer> { //<Integer> 나는 숫자를 받을께
+
+    private Subscription subscription;
+
+    private int bufferSize = 3;
+
+    /**
+     * 이런식으로 bufferSize 설정하면 한번에 내가 받고싶은 만큼 끊어서 받을 수 있음
+     * old패키지에 WebFlux부분에 이걸 적용하면 out.flush();전에 원하는 개수만큼 받고난다음 out.flush();가능
+     *
+     */
+    @Override
+    public void onSubscribe(Subscription subscription) {
+        System.out.println("구독자 : 구독 정보 잘 받았어");
+        this.subscription = subscription;
+        System.out.println("구독자 : 나 이제 신문 1개씩 줘");
+        subscription.request(bufferSize); // 신문 한개씩 매일매일 줘! (백프레셔) 소비자가 한번에 처리할 수 있는 개수를 요청
+    }
+
+    @Override
+    public void onNext(Integer integer) {
+        System.out.println("onNext() : " + integer );
+        bufferSize--;
+        if (bufferSize == 0) {
+            System.out.println("하루 지남");
+            bufferSize = 3;
+            subscription.request(bufferSize);
+        }
+
+    }
+
+    @Override
+    public void onError(Throwable throwable) {
+        System.out.println("구독중 에러");
+    }
+
+    @Override
+    public void onComplete() {
+        System.out.println("구독 완료");
+
+    }
+}
+```
+
+* 구독정보
+```java
+//구독정보 (구독자, 어떤 데이터를 구독할지)
+public class MySubscription implements Subscription {
+
+    private Subscriber subscriber;
+
+    private Iterator<Integer> iterable;
+
+    public MySubscription(Subscriber s, Iterable<Integer> its) {
+        subscriber = s;
+        iterable = its.iterator();
+    }
+
+    @Override
+    public void request(long l) {
+        while (l > 0) {
+            if (iterable.hasNext()) {
+                subscriber.onNext(iterable.next()); //1,2,3,4,5,6,7,8,9,10
+            } else {
+                subscriber.onComplete();
+                break;
+            }
+            l--;
+        }
+    }
+
+    @Override
+    public void cancel() {
+
+    }
+}
+```
+전반적인건 코드 참조하면 되고 지금 코드에서는 구독정보.request와 사용자.onNext의 주기 반복으로 사용사자 설정한 개수만큼 받고 한번 쉴 수 있는 로직이 완성된다.  
+이걸 전에 했던 요상한 임시 Flux 코드에 적용하면 한번에 여러뭉텅이씩 여러번 연결을 끊지않고 전송하는게 가능하다.  
+
+
