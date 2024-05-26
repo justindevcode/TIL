@@ -6399,4 +6399,119 @@ public class MySubscription implements Subscription {
 전반적인건 코드 참조하면 되고 지금 코드에서는 구독정보.request와 사용자.onNext의 주기 반복으로 사용사자 설정한 개수만큼 받고 한번 쉴 수 있는 로직이 완성된다.  
 이걸 전에 했던 요상한 임시 Flux 코드에 적용하면 한번에 여러뭉텅이씩 여러번 연결을 끊지않고 전송하는게 가능하다.  
 
+---
+## 20240526
+### 스프링,부트 자바 시스템설정과 커맨드라인 인수
 
+#### 자바 시스템설정
+
+자바 시스템 속성(Java System properties)은 실행한 JVM 안에서 접근 가능한 외부 설정이다. 추가로 자바가 내부에서 미리 설정해두고 사용하는 속성들도 있다.  
+
+`java -Durl=dev -jar app.jar` -D VM 옵션을 통해서 key=value 형식을 주면 된다. 이 예제는 url=dev 속성이 추가된다  
+
+```java
+@Slf4j
+public class JavaSystemProperties {
+ public static void main(String[] args) {
+ Properties properties = System.getProperties();
+ for (Object key : properties.keySet()) {
+ log.info("prop {}={}", key, 
+System.getProperty(String.valueOf(key)));
+ }
+ String url = System.getProperty("url");
+ String username = System.getProperty("username");
+ String password = System.getProperty("password");
+ log.info("url={}", url);
+ log.info("username={}", username);
+ log.info("password={}", password);
+ }
+}
+```
+이런코드로 간단히 뽑을 수 있다. 
+IDE에서는 vm옵션으로 `-Durl=devdb -Dusername=dev_user -Dpassword=dev_pw`이렇게 넣어주면 읽는다.  
+
+저 키밸류 값을 자바 코드로 넣는거도 가능하다. `System.setProperty(propertyName, "propertyValue")` setter를 써서 그냥 넣어주면 이거도 꺼내쓸 수 있다.  
+
+#### 커맨드 라인 인수
+
+자바의 기본인수로 `java -jar app.jar dataA dataB`로 jar다음에 띄어쓰기로 구분한다.  
+
+```java
+@Slf4j
+public class CommandLineV1 {
+ public static void main(String[] args) {
+ for (String arg : args) {
+ log.info("arg {}", arg);
+ }
+ }
+}
+```
+main에 args로 들어오는 것들이 이건데 IDE에서는 Program arguments에서 띄어쓰기로 구분하여 나열해주면 args에서 받는다.  
+근데 이런 단순 배열로 받는건 너무 불편하다. 개발자는 보통 key = value 형식으로 많이 사용한다. 저기에 냅다 `url=devdb`이렇게 넣어주면 그냥 `url=devdb` 통째로 string으로 받는다.  
+참고로 띄어쓰기포함 하나의 인수로 받으려면 `"hello world"`이렇게 따옴표 써주면 `"hello world"`를 통째로 하나의 스트링으로 받는다.  
+
+#### 스프링  커맨드 라인 옵션 인수
+
+위의 문제를 해결하기 위해서는 우리가 자바 코드로 `=`를 기준으로 왼쪽은 키값 오른쪽은 밸류값으로 파싱하는 코드 만들면 되긴하는데 이를 스프링에서 미리 만들어 주었다.  
+
+`--key=value` 형식으로 사용한다 (--붙인걸 인식한다는건 자바표준이 아니라 스프링이 임의로 지정 약속한것)  
+`--username=userA --username=userB` 하나의 키에 여러 값도 지정할 수 있다
+
+```java
+@Slf4j
+public class CommandLineV2 {
+ public static void main(String[] args) {
+ for (String arg : args) {
+ log.info("arg {}", arg);
+ }
+ ApplicationArguments appArgs = new DefaultApplicationArguments(args);
+ log.info("SourceArgs = {}", List.of(appArgs.getSourceArgs()));
+ log.info("NonOptionArgs = {}", appArgs.getNonOptionArgs());
+ log.info("OptionNames = {}", appArgs.getOptionNames());
+ Set<String> optionNames = appArgs.getOptionNames();
+ for (String optionName : optionNames) {
+ log.info("option args {}={}", optionName, 
+appArgs.getOptionValues(optionName));
+ }
+ List<String> url = appArgs.getOptionValues("url");
+ List<String> username = appArgs.getOptionValues("username");
+ List<String> password = appArgs.getOptionValues("password");
+ List<String> mode = appArgs.getOptionValues("mode");
+ log.info("url={}", url);
+ log.info("username={}", username);
+ log.info("password={}", password);
+ log.info("mode={}", mode);
+ }
+}
+```
+`ApplicationArguments`인터페이스의 `DefaultApplicationArguments`구현체를 사용하면 된다. 구현체에 `args`넣어주면 끝  
+`--`안 붙여주면 그냥 하나의 스트링으로 인식  
+
+참고로 옵션 인수는 --username=userA --username=userB 처럼 하나의 키에 여러 값을 포함할 수 있기 때문에 appArgs.getOptionValues(key) 의 결과는 리스트( List )를 반환한다.  
+
+#### 커맨드 라인 옵션 인수와 스프링 부트
+
+이런 편리함을 스프링 부트에서는 `ApplicationArguments appArgs = new DefaultApplicationArguments(args);`이 과정을 자동 빈으로 등록해준다.  
+즉 내가 필요한곳에서 언제든 꺼내쓸 수 있다는것  
+
+```java
+@Slf4j
+@Component
+public class CommandLineBean {
+ private final ApplicationArguments arguments;
+ public CommandLineBean(ApplicationArguments arguments) {
+ this.arguments = arguments;
+ }
+ @PostConstruct
+ public void init() {
+ log.info("source {}", List.of(arguments.getSourceArgs()));
+ log.info("optionNames {}", arguments.getOptionNames());
+ Set<String> optionNames = arguments.getOptionNames();
+ for (String optionName : optionNames) {
+ log.info("option args {}={}", optionName, 
+arguments.getOptionValues(optionName));
+ }
+ }
+}
+```
+`private final ApplicationArguments arguments;` 자동주입받아서 그냥 쓰면된다.  
