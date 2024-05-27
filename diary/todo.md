@@ -6515,3 +6515,280 @@ arguments.getOptionValues(optionName));
 }
 ```
 `private final ApplicationArguments arguments;` 자동주입받아서 그냥 쓰면된다.  
+
+---
+## 20240527
+### 스프링 WebFlux 예제
+
+#### 참조
+https://www.youtube.com/watch?v=rQXAvCNsZ8I&list=PL93mKxaRDidFH5gRwkDX5pQxtp0iv3guf&index=6  
+https://spring.io/guides/gs/accessing-data-r2dbc  (스프링사이트제공 예시)  
+
+#### 기본 프로젝트 설정
+
+* 의존성
+```java
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-data-r2dbc' //jpa 대신 이거써야 단일쓰레드 같이
+	implementation 'org.springframework.boot:spring-boot-starter-webflux' // 단일쓰레드 환경
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	runtimeOnly 'com.h2database:h2'
+	runtimeOnly 'io.r2dbc:r2dbc-h2'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'io.projectreactor:reactor-test'
+}
+
+```
+
+* resources파일 안에 schema.sql생성
+```sql
+CREATE TABLE IF NOT EXISTS customer (id SERIAL PRIMARY KEY, first_name VARCHAR(255), last_name VARCHAR(255));
+```
+
+* domain 페키지에 엔티티생성
+```java
+@Data
+@RequiredArgsConstructor
+public class Customer {
+
+    @Id
+    private Long id;
+
+    private final String firstName;
+
+    private final String lastName;
+
+
+}
+```
+
+* r2dbc 레포지토리
+```java
+public interface CustomerRepository extends ReactiveCrudRepository<Customer, Long> {
+
+    @Query("SELECT * FROM customer WHERE last_name = :lastname")
+    Flux<Customer> findByLastName(String lastName);
+
+}
+```
+
+* 기본 데모 빈 등록 (스프링 띄워질때 테이블에 CRUD 진행해보며 로그찍어보는 테스트임)
+```java
+@Slf4j
+@Configuration
+public class DBinit {
+
+    @Bean
+    public CommandLineRunner demo(CustomerRepository repository) {
+
+        return (args) -> {
+            // save a few customers
+            repository.saveAll(Arrays.asList(new Customer("Jack", "Bauer"),
+                            new Customer("Chloe", "O'Brian"),
+                            new Customer("Kim", "Bauer"),
+                            new Customer("David", "Palmer"),
+                            new Customer("Michelle", "Dessler")))
+                    .blockLast(Duration.ofSeconds(10));
+
+            // fetch all customers
+            log.info("Customers found with findAll():");
+            log.info("-------------------------------");
+            repository.findAll().doOnNext(customer -> {
+                log.info(customer.toString());
+            }).blockLast(Duration.ofSeconds(10));
+
+            log.info("");
+
+            // fetch an individual customer by ID
+            repository.findById(1L).doOnNext(customer -> {
+                log.info("Customer found with findById(1L):");
+                log.info("--------------------------------");
+                log.info(customer.toString());
+                log.info("");
+            }).block(Duration.ofSeconds(10));
+
+
+            // fetch customers by last name
+            log.info("Customer found with findByLastName('Bauer'):");
+            log.info("--------------------------------------------");
+            repository.findByLastName("Bauer").doOnNext(bauer -> {
+                log.info(bauer.toString());
+            }).blockLast(Duration.ofSeconds(10));;
+            log.info("");
+
+        };
+    }
+}
+```
+
+#### 직접 호출해보기  
+
+* controller 하나 제작
+```java
+@RestController
+public class CustomerController {
+
+    private final CustomerRepository customerRepository;
+
+    public CustomerController(CustomerRepository customerRepository) {
+        this.customerRepository = customerRepository;
+    }
+
+    @GetMapping("/customer")
+    public Flux<Customer> findAll() {
+        return customerRepository.findAll().log();
+    }
+}	
+```
+
+* customer요청 이거 실행하면
+```java
+2024-05-03T14:40:58.424+09:00  INFO 26547 --- [webflux2] [or-http-epoll-4] reactor.Flux.UsingWhen.2                 : onSubscribe(FluxUsingWhen.UsingWhenSubscriber)
+2024-05-03T14:40:58.425+09:00  INFO 26547 --- [webflux2] [or-http-epoll-4] reactor.Flux.UsingWhen.2                 : request(1)
+2024-05-03T14:40:58.426+09:00  INFO 26547 --- [webflux2] [or-http-epoll-4] reactor.Flux.UsingWhen.2                 : onNext(Customer(id=1, firstName=Jack, lastName=Bauer))
+2024-05-03T14:40:58.427+09:00  INFO 26547 --- [webflux2] [or-http-epoll-4] reactor.Flux.UsingWhen.2                 : request(127)
+2024-05-03T14:40:58.427+09:00  INFO 26547 --- [webflux2] [or-http-epoll-4] reactor.Flux.UsingWhen.2                 : onNext(Customer(id=2, firstName=Chloe, lastName=O'Brian))
+2024-05-03T14:40:58.428+09:00  INFO 26547 --- [webflux2] [or-http-epoll-4] reactor.Flux.UsingWhen.2                 : onNext(Customer(id=3, firstName=Kim, lastName=Bauer))
+2024-05-03T14:40:58.428+09:00  INFO 26547 --- [webflux2] [or-http-epoll-4] reactor.Flux.UsingWhen.2                 : onNext(Customer(id=4, firstName=David, lastName=Palmer))
+2024-05-03T14:40:58.428+09:00  INFO 26547 --- [webflux2] [or-http-epoll-4] reactor.Flux.UsingWhen.2                 : onNext(Customer(id=5, firstName=Michelle, lastName=Dessler))
+2024-05-03T14:40:58.429+09:00  INFO 26547 --- [webflux2] [or-http-epoll-4] reactor.Flux.UsingWhen.2                 : onComplete()
+```
+대강 이런 로그 뜨는데 `onSubscribe(FluxUsingWhen.UsingWhenSubscriber)`DB에 구독중인거 뜨고  
+DB에서 `onNext`응답 5개 모두 하나씩 받고 나서 `onComplete`되면서 http에 응답 가는것  
+(request(1)하고 다시 request(127)두개 나오는건 모르겠.. 강의에서는 unbounded라고 한번에 전부라는뜻 단어뜨던데..)  
+
+* 모든 컨트롤러 작업후 결과 주석참고
+```java
+@RestController
+public class CustomerController {
+
+    private final CustomerRepository customerRepository;
+
+    public CustomerController(CustomerRepository customerRepository) {
+        this.customerRepository = customerRepository;
+
+        //SEE용 뒤에서사용
+        sink = Sinks.many().multicast().onBackpressureBuffer();
+    }
+
+    @GetMapping("/customer")
+    public Flux<Customer> findAll() {
+        return customerRepository.findAll().log();
+        //결과 데이터들 바로 뜸
+    }
+
+    @GetMapping("/flux")
+    public Flux<Integer> flux() {
+        return Flux.just(1, 2, 3, 4, 5).delayElements(Duration.ofSeconds(1)).log();
+        //just는 데이터들을 순차적으로 onNext()실행하듯이 구독해서 던지는것 각 next마다 1초씩 대기
+        //결과 -> 브라우저가 5초동안 로딩후에 한번에 1,2,3,4,5뜸
+    }
+
+    @GetMapping(value = "/fluxstream", produces = MediaType.APPLICATION_STREAM_JSON_VALUE)
+    public Flux<Integer> fluxStream() {
+        return Flux.just(1, 2, 3, 4, 5).delayElements(Duration.ofSeconds(1)).log();
+        //just는 데이터들을 순차적으로 onNext()실행하듯이 구독해서 던지는것 각 next마다 1초씩 대기
+        //결과 -> 연결을 유지하면서 onNext가 실행되 결과를 하나씩만 받아도 그걸 바로바로 버퍼 flush해줌
+        //1초마다 1,2,3,4,5 순차적으로 브라우저에 뜸
+    }
+
+    @GetMapping("/customer/{id}")
+    public Mono<Customer> findById(@PathVariable Long id) { //단건리턴 Mono
+        return customerRepository.findById(id).log();
+        //결과 -> 한건만 주고 끝
+        //로그에는 onSubscribe(MonoUsingWhen.MonoUsingWhenSubscriber),request(unbounded),onNextonComplete()끝
+    }
+
+    @GetMapping(value = "/customersteam", produces = MediaType.APPLICATION_STREAM_JSON_VALUE)
+    public Flux<Customer> findAllSteam() {
+        return customerRepository.findAll().delayElements(Duration.ofSeconds(1)).log();
+        //결과 fluxstream비슷 1초마다 유저정보
+    }
+
+    //'MediaType.APPLICATION_STREAM_JSON_VALUE' is deprecated
+    @GetMapping(value = "/customer/sse", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<Customer> findAllSSE() {
+        return customerRepository.findAll().delayElements(Duration.ofSeconds(1)).log();
+        //findAllSteam과 비슷하지만 브라우저 결과에 data:{"id":1,"firstName":"Jack","lastName":"Bauer"}...
+        //이런식으로 data 가 앞에 붙음
+    }
+
+    //A요청 -> Flux -> Stream
+    //B요청 -> Flux -> Stream
+    // -> Flux.merge -> sink 다른 요청의 Flux를 하나로 합쳐받을 수 있다.
+    private final Sinks.Many<Customer> sink;
+
+    @GetMapping("/customer/sse/sink") //sink 사용하면 produces = MediaType.TEXT_EVENT_STREAM_VALUE 자동적용
+    public Flux<ServerSentEvent<Customer>> findAllSSESink() {
+        return sink.asFlux().map(customer -> ServerSentEvent.builder(customer).build()).doOnCancel(() ->{
+            sink.asFlux().blockLast();
+        });
+        //sink에 들어오는 스트림을 계속 기다릴 수 있음 무한로딩,doOnCancel 로딩 취소눌러도 다시 재시도하고 받는거 가능
+    }
+
+    @PostMapping("/customer")
+    public Mono<Customer> save() {
+        return customerRepository.save(new Customer("gildong", "Hong")).doOnNext(c -> {
+            sink.tryEmitNext(c);
+        });
+        //유저를 하나저장하는 로직인데 저장후 doOnNext 그걸 sink로도 넘겨줌 위의 요청에서 무한로딩에서 바로 받을 수 있음
+    }
+}
+```
+
+#### 테스트방법 대략 (오류뜸!) (옛날코드, 강의자님 대강확인한것 느낌만 확인)
+
+* 컨트롤러 테스트 (동작안함!!)
+```java
+@WebFluxTest // 단위테스트는 스프링 빈 전부 띄우면 안됨 그래서 필요한것들만 띄워야하는데 지금은 컨트롤에서 레포써서힘듦?
+//@SpringBootTest //@AutoConfigureWebTestClient 통합 테스트할때는 이거2개
+public class CustomerControllerTest {
+
+    @MockBean
+    private CustomerRepository customerRepository;
+
+    @Autowired
+    private WebTestClient webTestClient; // 비동기로 http요청
+
+    @Test
+    public void 한건찾기_테스트() {
+        Mono<Customer> givenData = Mono.just(new Customer("Jack", "Bauer"));
+
+        when(customerRepository.findById(1L)).thenReturn(givenData);
+
+        webTestClient.get().uri("/customer/{id}", 1L)
+                .exchange()
+                .expectBody()
+                .jsonPath("$.firstName").isEqualTo("Jack")
+                .jsonPath("$.lastName").isEqualTo("Bauer");
+
+
+    }
+}
+```
+단위테스트는 정확히 필요한것만 빈으로 띄워서 확인하는것 즉 레포지토리에서 반환되는값은 내가 만들어서 그것과 비교
+
+* 레포지토리 테스트 (동작안함!!)
+```java
+@DataR2dbcTest
+@Import(DBinit.class)
+public class CustomerRepositoryTest {
+
+    @Autowired
+    private CustomerRepository customerRepository;
+
+    @Test
+    public void 한건찾기_테스트() {
+        StepVerifier
+                .create(customerRepository.findById(2L))
+                .expectNextMatches((c) -> {
+                    return c.getFirstName().equals("Chloe");
+                })
+                .expectComplete()
+                .verify();
+    }
+}
+```
+여긴 레포지토리 테스트이기때문에 실제로꺼내서 비교 기본값이 `@Import(DBinit.class)`요 bean에 들어있어서 넣어줌
