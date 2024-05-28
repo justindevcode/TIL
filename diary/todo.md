@@ -6792,3 +6792,96 @@ public class CustomerRepositoryTest {
 }
 ```
 여긴 레포지토리 테스트이기때문에 실제로꺼내서 비교 기본값이 `@Import(DBinit.class)`요 bean에 들어있어서 넣어줌
+
+---
+## 20240528
+### 스프링 외부설정
+#### 스프링 외부설정 통합
+
+커맨드 라인 옵션 인수, 자바 시스템 속성, OS 환경변수는 모두 외부 설정을 key=value 형식으로 사용할 수 있는 방법  
+추상화해서 하나의 객체로 모두 받을 수 있는 옵션 제공함  
+
+스프링은 이 문제를 Environment 와 PropertySource 라는 추상화를 통해서 해결한다  
+
+```java
+@Slf4j
+@Component
+public class EnvironmentCheck {
+ private final Environment env;
+ public EnvironmentCheck(Environment env) {
+ this.env = env;
+ }
+ @PostConstruct
+ public void init() {
+ String url = env.getProperty("url");
+ String username = env.getProperty("username");
+ String password = env.getProperty("password");
+ log.info("env url={}", url);
+ log.info("env username={}", username);
+ log.info("env password={}", password);
+ }
+}
+```
+모든 설정을 `Environment env`통해서 받을 수 있음  
+
+`--url=devdb --username=dev_user --password=dev_pw`  
+`-Durl=devdb -Dusername=dev_user -Dpassword=dev_pw`
+이렇게 하나 저렇게 하나 모두 env변수로 받는거가능  
+
+다만 같은 키값이 있을때는 우선순위가 있음 더 유연한것, 더 세세하고 좁은것이 우선  
+위의 예시에서는 커멘드라인 인수 옵션에 main함수에서만 받을수 있기때문에 (스프링이 그 args 빈으로 등록해줘서 여러곳에서 쓸수있긴하지만)  
+커멘드라인 인수가 더 높은순위로 이값을 받아옴  
+
+#### 설정데이터 파일 외부파일
+위와같은 옵션들을 실행할때 줘야하는 `-Durl=devdb -Dusername=dev_user -Dpassword=dev_pw`이런거 실무환경에서 불편함  
+
+외부파일에서 읽자!  
+
+* application.properties
+```java
+url=dev.db.com
+username=dev_user
+password=dev_pw
+```
+스프링 내부의 `properties`말고 빌드했을때 jar파일과 동일한 위치에서 `application.properties`만들고 그냥 jar실행시키면 해당`application.properties`파일을 자동으로 읽음  
+`Environment env`의 `PropertySource`구현체 있는것 똑같이 읽으면 된다.  
+`application.yml`도 동일하게 모두 적용됨  
+
+#### 내부 파일 분리
+
+하지만 위와같이 아에 따로 관리하게되면 git으로도 추적이 안되고 서버마다 설정해줘야해서 번거롭다 그래서 나온것이 내부파일 사용  
+스프링에 기본으로 있는 `main/resources`안의 `application.properties`이용
+
+* application-dev.properties
+```java
+url=dev.db.com
+username=dev_user
+password=dev_pw
+```
+
+* application-prod.properties
+```java
+url=prod.db.com
+username=prod_user
+password=prod_pw
+```
+이렇게 두개 파일을 만들어 두면 스프링에는 프로필이라는 개념을 지원  
+
+`application-{profile}.properties` 규칙으로 `spring.profiles.active=dev` 라는 옵션을 어디든 넣어주게 되면 dev파일을 읽음  
+
+추가팁으로 
+
+* application.properties
+```java
+spring.config.activate.on-profile=dev
+url=dev.db.com
+username=dev_user
+password=dev_pw
+#---
+spring.config.activate.on-profile=prod
+url=prod.db.com
+username=prod_user
+password=prod_pw
+```
+이런식으로 하나의 파일에다가 `properties`의 경우 `#---`를
+`yml`의 경우 `---`로 구분해서 `spring.config.activate.on-profile`이름만 지정해주면 한파일에서 두개의 프로필 설정가능하다.  
