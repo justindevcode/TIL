@@ -6885,3 +6885,91 @@ password=prod_pw
 ```
 이런식으로 하나의 파일에다가 `properties`의 경우 `#---`를
 `yml`의 경우 `---`로 구분해서 `spring.config.activate.on-profile`이름만 지정해주면 한파일에서 두개의 프로필 설정가능하다.  
+
+---
+## 20240529
+### Redis 기초1
+
+#### Redis 개념 소개
+
+* **Redis => `REmote DIctionary Server`**
+  * 중요한 점은 `key:value`형식의 `dictionary` 저장소라는 것.
+* In-Memory Data Structure Store
+  * 프로세스로 존재하며, 보통 remote에 존재한다.
+  * DB, Cache, Message Broker로 사용된다.
+* Open Source (BDS 3 License)
+* Support data structures (key:value)
+  * Strings, set, sorted-set, hashes, list
+  * Hyperloglog, bitmap, geospatial index
+  * Stream
+* 다양한 기능을 제공
+  * Build-In Replication
+  * 트랜잭션
+  * different levels of on-disk persistence
+  * 클러스터링 등등
+* Only 1 Committer
+  * Redis 소스 코드를 고칠 수 있는 권한이 있는 사람은 딱 한 명!
+
+#### Cache
+> Redis는 캐싱을 위해 많이 사용되므로 캐싱에 대해 알면 도움이 된다.
+
+Cache란?
+* Cache는 나중에 요청을 결과를 미리 저장해두었다가 빠르게 서비스를 해주는 것을 의미
+  * ex. Factorial -> 10! = 10 * 9! (9!를 캐싱해두면 연산이 훨씬 빨라짐)
+  * ex. DP
+  * 운영체제도 CPU가 디스크에 접근하는 속도가 느리므로, 중간에 캐시를 많이 둬서 이를 빠르게 사용하도록 한다.
+* 파레토 법칙
+  * 20:80 법칙으로, 우리 사회에서 일어나는 현상의 80%는 20%의 원인으로 인하여 발생한다. (캐싱을 잘 설명해주는 유비쿼터스)
+  * 즉, 전체 요청의 80%는 20%의 사용자이다. (캐싱을 사용해야 하는 이유)
+
+웹 서버에서 사용되는 Cache 구조
+
+**아주 추상적인 웹 서비스 구조**
+
+![](https://github.com/justindevcode/TIL/assets/108222981/856a1f14-b96c-4690-a409-a55b392bc35f)
+
+* 캐싱을 적용하지 않은 구조
+  * DB안에 모든 데이터가 존재하는 구조.
+  * 디스크에 데이터를 저장하는 일반적인 구조.
+
+**Look aside Cache**
+
+![](https://github.com/justindevcode/TIL/assets/108222981/bd937eaf-4b09-465a-98d9-c9565f28ac7f)
+
+* Web Server는 데이터가 존재하는지 Cache를 먼저 확인한다.
+  * Cache에 데이터가 있으면 Cache에서 값을 가져온다.
+  * Cache에 데이터가 없다면 DB에서 데이터를 가져와서 Cache에 저장하고 값을 가져온다.
+* Write하는 방식
+  * 방법1. 애플리케이션이 새로운 데이터 쓰기 혹은 업데이트할 때 캐시와 DB 모두에 같은 작업을 실행하는 방법.
+  * 방법2. 애플리케이션의 모든 쓰기 작업은 DB에만 적용되고, 기존의 캐시 데이터를 무효화시키는 방법.
+
+**Write Back**
+
+![](https://github.com/justindevcode/TIL/assets/108222981/bd937eaf-4b09-465a-98d9-c9565f28ac7f)
+
+* Web Server는 모든 데이터를 Cache에만 저장한다.
+  * Cache에 특정 시간동안의 데이터가 저장된다.
+  * 그리고 배치처리를 통해 Cache에 있는 데이터를 DB에 저장한다.
+  * DB에 저장되었다면 Cache에는 해당 데이터를 삭제한다.
+* 이 방식의 단점
+  * 장애가 생기면 데이터가 날아갈 수도 있다. 안정성 부분에서 불안한다.
+  * 그래서 로그를 Redis에 넣어두고 배치적으로 저장할 때 많이 사용된다.
+
+> 질문 Q: insert 쿼리를 한번씩 500번 날리는 것과 insert 쿼리 한번에 500개를 붙여서 날리는 것중 어느 것이 더 빠를까?
+> * 후자가 훨씬 빠르다. write back은 이 원리를 이용한 방식이다.
+
+#### Redis는 언제 사용되는가?
+* Remote Data Store
+  * A 서버, B 서버, C 서버에서 데이터를 공유하고 싶을 때
+* 한대에서만 필요한다면, 전역 변수를 쓰면 되지 않는가?
+  * Redis 자체가 Atomic을 보장해주기 때문. (싱글 스레드라.. Thread Safe하다)
+  * 물론 특정 상황에서 완벽하진 않다고 한다.
+* 주로 많이 사용되는 곳
+  * 인증 토큰 등을 저장 (Strings 또는 hash)
+  * Ranking 보드로 사용 (Sorted Set)
+  * 유저 API Limit
+  * 잡 큐 (list)
+
+#### 출처
+https://github.com/binghe819/TIL/blob/master/DB/Redis/Redis%EB%8A%94%20%EB%AC%B4%EC%97%87%EC%9D%B4%EA%B3%A0,%20%EC%96%B4%EB%96%BB%EA%B2%8C%20%EC%82%AC%EC%9A%A9%ED%95%98%EB%8A%94%20%EA%B2%83%EC%9D%B4%20%EC%A2%8B%EC%9D%80%EA%B0%80/Redis%EB%8A%94%20%EB%AC%B4%EC%97%87%EC%9D%B4%EA%B3%A0,%20%EC%96%B4%EB%96%BB%EA%B2%8C%20%EC%82%AC%EC%9A%A9%ED%95%98%EB%8A%94%20%EA%B2%83%EC%9D%B4%20%EC%A2%8B%EC%9D%80%EA%B0%80.md  
+
