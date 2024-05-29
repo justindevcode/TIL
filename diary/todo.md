@@ -6973,3 +6973,113 @@ Cache란?
 #### 출처
 https://github.com/binghe819/TIL/blob/master/DB/Redis/Redis%EB%8A%94%20%EB%AC%B4%EC%97%87%EC%9D%B4%EA%B3%A0,%20%EC%96%B4%EB%96%BB%EA%B2%8C%20%EC%82%AC%EC%9A%A9%ED%95%98%EB%8A%94%20%EA%B2%83%EC%9D%B4%20%EC%A2%8B%EC%9D%80%EA%B0%80/Redis%EB%8A%94%20%EB%AC%B4%EC%97%87%EC%9D%B4%EA%B3%A0,%20%EC%96%B4%EB%96%BB%EA%B2%8C%20%EC%82%AC%EC%9A%A9%ED%95%98%EB%8A%94%20%EA%B2%83%EC%9D%B4%20%EC%A2%8B%EC%9D%80%EA%B0%80.md  
 
+---
+### 프로그래머스 배스트앨범 해쉬3단계
+
+스트리밍 사이트에서 장르 별로 가장 많이 재생된 노래를 두 개씩 모아 베스트 앨범을 출시하려 합니다. 노래는 고유 번호로 구분하며, 노래를 수록하는 기준은 다음과 같습니다. 속한 노래가 많이 재생된 장르를 먼저 수록합니다. 장르 내에서 많이 재생된 노래를 먼저 수록합니다. 장르 내에서 재생 횟수가 같은 노래 중에서는 고유 번호가 낮은 노래를 먼저 수록합니다. 노래의 장르를 나타내는 문자열 배열 genres와 노래별 재생 횟수를 나타내는 정수 배열 plays가 주어질 때, 베스트 앨범에 들어갈 노래의 고유 번호를 순서대로 return 하도록 solution 함수를 완성하세요.  
+|genres|plays|return|
+|---|---|---|
+|["classic", "pop", "classic", "classic", "pop"]|[500, 600, 150, 800, 2500]|[4, 1, 3, 0]|
+
+
+* 코드
+```java
+import java.util.*;
+
+public class Main {
+    public static void main(String[] args) {
+        String[] genres = {"classic", "pop", "classic", "classic", "pop"};
+        int[] plays = {500, 600, 150, 800, 2500};
+
+
+        Solution solution = new Solution();
+        //System.out.println("Hello World");
+        int[] solution1 = solution.solution(genres, plays);
+        for (int i : solution1) {
+            System.out.println("i = " + i);
+        }
+
+
+    }
+
+    static class Solution {
+        int[] answer = {};
+
+
+        public int[] solution(String[] genres, int[] plays) {
+            HashMap<String, LinkedList<int[]>> hashMap = new HashMap<>();
+            for (int i = 0; i < genres.length; i++) {
+                if (hashMap.containsKey(genres[i])) {
+                    LinkedList<int[]> integers = hashMap.get(genres[i]);
+                    int[] integers2 = {i, plays[i]};
+                    integers.add(integers2);
+                    integers.sort(new Comparator<int[]>() {
+                        @Override
+                        public int compare(int[] o1, int[] o2) {
+                            return Integer.compare(o2[1], o1[1]); // o2와 o1의 순서를 바꾸면 내림차순
+                        }
+                    });
+
+                    hashMap.put(genres[i], integers);
+                } else {
+                    int[] integers = {i, plays[i]};
+                    LinkedList linkedList = new LinkedList<>();
+                    linkedList.add(integers);
+                    hashMap.put(genres[i], linkedList);
+                }
+            }
+
+            LinkedHashMap<String, LinkedList<int[]>> sortedMap = sortHashMapBySum(hashMap);
+            ArrayList<Integer> list = new ArrayList<>();
+            for (Map.Entry<String, LinkedList<int[]>> entry : sortedMap.entrySet()) {
+                list.add(entry.getValue().get(0)[0]);
+                if (entry.getValue().size() > 1) {
+                    list.add(entry.getValue().get(1)[0]);
+                }
+
+            }
+            return answer = toIntArray(list);
+
+        }
+        public static LinkedHashMap<String, LinkedList<int[]>> sortHashMapBySum(HashMap<String, LinkedList<int[]>> map) {
+            // 각 키의 LinkedList<int[]>의 int[1] 합계를 계산하여 정렬
+            List<Map.Entry<String, LinkedList<int[]>>> entries = new ArrayList<>(map.entrySet());
+            entries.sort((e1, e2) -> {
+                int sum1 = sumList(e1.getValue());
+                int sum2 = sumList(e2.getValue());
+                return Integer.compare(sum2, sum1); // 내림차순 정렬
+            });
+
+            // 정렬된 결과를 LinkedHashMap에 삽입
+            LinkedHashMap<String, LinkedList<int[]>> sortedMap = new LinkedHashMap<>();
+            for (Map.Entry<String, LinkedList<int[]>> entry : entries) {
+                sortedMap.put(entry.getKey(), entry.getValue());
+            }
+
+            return sortedMap;
+        }
+
+        // LinkedList<int[]>의 int[1] 합계를 계산하는 메서드
+        public static int sumList(LinkedList<int[]> list) {
+            int sum = 0;
+            for (int[] arr : list) {
+                sum += arr[1];
+            }
+            return sum;
+        }
+        public static int[] toIntArray(ArrayList<Integer> list) {
+            int[] array = new int[list.size()];
+            for (int i = 0; i < list.size(); i++) {
+                array[i] = list.get(i);
+            }
+            return array;
+        }
+    }
+}
+```
+생각을 구현하는게 힘들었다. 기본적으로 HashMap에 담는데 장르에 대한 곡 인덱스와 재생수를 링크드리스트로 정렬을 하면서 붙인다  
+그리고 SortedHashMap으로 바꾸면서 재생수높은것이 위로오개 정렬하며 다시 HashMap을 만든다.  
+그리고 그 HashMap에서 최대 2개씩 꺼내서 인덱스를 저장한다.  
+
+이과정에서 소소한 실수들이 많았다.  
+
