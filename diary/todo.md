@@ -7086,3 +7086,90 @@ public class Main {
 ---
 ## 20240530
 
+### 스프링 외부설정 우선순위
+
+#### 우선순위 - 설정 데이터  
+
+* application.properties
+```
+ spring.config.activate.on-profile=dev
+ url=dev.db.com
+ username=dev_user
+ password=dev_pw
+ #--
+spring.config.activate.on-profile=prod
+ url=prod.db.com
+ username=prod_user
+ password=prod_pw
+```
+이 설정후에 아무 프로필도 안넣어주면 `No active profile set, falling back to 1 default profile: "default"`나오면서  
+모든 값들 url, username 등 모두 null로 나옴  
+
+```
+url=local.db.com
+ username=local_user
+ password=local_pw
+ #--
+spring.config.activate.on-profile=dev
+ url=dev.db.com
+ username=dev_user
+ password=dev_pw
+ #--
+spring.config.activate.on-profile=prod
+ url=prod.db.com
+ username=prod_user
+ password=prod_pw
+```
+이렇게 프로필명 기재한안 부분이 있다면 기본값으로 읽음  
+프로필설정 x ->  `url=local.db.com` `username=local_user` `password=local_pw`  
+
+기본적으로 위에서 아래로 읽으며 프로필명이 없는건 무조건 읽고 그다음 프로필이 설정되어있다면 그설정을 사용한다.  
+
+하나유의해야할점이
+
+* 극단적 예시
+```
+ url=local.db.com
+username=local_user
+ password=local_pw
+ #--
+spring.config.activate.on-profile=dev
+ url=dev.db.com
+ username=dev_user
+ password=dev_pw
+ #--
+spring.config.activate.on-profile=prod
+ url=prod.db.com
+ username=prod_user
+ password=prod_pw
+ #--
+url=hello.db.com
+```
+이렇게 설정하고 프로필을 `prod`로 줬다.  
+그러면 `url = hello.db.com`이 나온다.  
+
+#### 우선순위 전체  
+
+우선수위는 위에서 아래로 아래서 먼저 적용된다.  
+
+자주사용하는 우선순위  
+* 설정 데이터 `application.properties`
+* OS환경변수
+* 자바 시스템 속성
+* 커맨드라인 옵션인수
+* @TestPropertySource (테스트에서 사용)
+
+설정 데이터 우선순위
+* jar 내부 `application.properties`
+* jar 내부 프로필적용 `application-{profile}.properties`
+* jar 외부 `application.properties`
+* jar 외부 프로필적용 `application-{profile}.properties`
+
+우선순위에서 생각할것 2가지  
+더 유연한 것이 우선권을 가진다. (변경하기 어려운 파일 보다 실행시 원하는 값을 줄 수 있는 자바 시스템 속성이 더 우선권을 가진다.)  
+
+범위가 넒은 것 보다 좁은 것이 우선권을 가진다  
+* OS 환경변수 보다 자바 시스템 속성이 우선권이 있다.
+* 자바 시스템 속성 보다 커맨드 라인 옵션 인수가 우선권이 있다
+
+Environment를 통해서 조회하는 관점에서 보면 외부 설정값들은 계속 추가되거나 기존 값을 덮어서 변경하는 것 처럼 보인다. 물론 실제 값을 덮어서 변경하는 것은 아니고, 우선순위가 높은 값이 조회되는 것이다. 그런데 이렇게 이해하면 개념적으로 더 쉽게 이해할 수 있다.  
