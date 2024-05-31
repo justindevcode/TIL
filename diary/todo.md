@@ -7512,3 +7512,122 @@ CPU가 100%를 칠 경우
 예를 들어 클러스터링이나 Disk에 저장하는 기능등등.  
 
 하지만 이제 막 Redis를 사용하기 시작한 필자에겐 이정도면 충분하다고 생각든다.  
+
+---
+## 20240601
+## 스프링 외부설정 2
+### Environment  
+
+이전의 `Environment`가 통합으로 관리해준다는것 다시 확인  
+
+* 정보받고싶은 클레스예시
+```java
+@Slf4j
+ @Data
+ public class MyDataSource {
+ private String url;
+ private String username;
+ private String password;
+ private int maxConnection;
+ private Duration timeout;
+ private List<String> options;
+ public MyDataSource(String url, String username, String password, int 
+maxConnection, Duration timeout, List<String> options) {
+ this.url = url;
+ this.username = username;
+ this.password = password;
+this.maxConnection = maxConnection;
+ this.timeout = timeout;
+ this.options = options;
+    }
+    @PostConstruct
+ public void init() {
+        log.info("url={}", url);
+        log.info("username={}", username);
+        log.info("password={}", password);
+        log.info("maxConnection={}", maxConnection);
+        log.info("timeout={}", timeout);
+        log.info("options={}", options);
+    }
+ }
+```
+
+* appliation.properties
+```
+my.datasource.url=local.db.com
+my.datasource.username=local_user
+my.datasource.password=local_pw
+my.datasource.etc.max-connection=1
+my.datasource.etc.timeout=3500ms
+my.datasource.etc.options=CACHE,ADMIN
+```
+
+* bean으로 위 클레스에 값받기
+```java
+@Slf4j
+ @Configuration
+ public class MyDataSourceEnvConfig {
+ private final Environment env;
+ public MyDataSourceEnvConfig(Environment env) {
+ 	this.env = env;
+    }
+    @Bean
+public MyDataSource myDataSource() {
+ String url = env.getProperty("my.datasource.url");
+ String username = env.getProperty("my.datasource.username");
+ String password = env.getProperty("my.datasource.password");
+ int maxConnection = env.getProperty("my.datasource.etc.max-connection", Integer.class);
+ Duration timeout = env.getProperty("my.datasource.etc.timeout", Duration.class);
+ List<String> options = env.getProperty("my.datasource.etc.options", List.class);
+ return new MyDataSource(url, username, password, maxConnection, timeout, options);
+    }
+ }
+```
+`Integer.class`이런식으로 두번째 매개변수에 변환될 객체형 넣어주면 그 자료형으로 변환해줌  
+
+이방법은 `Environment`를 사용하긴 했지만 결국 ` Duration timeout = env.getProperty("my.datasource.etc.timeout", Duration.class);`이런 변환 코드 다 적어줘야해서 불편함  
+
+### @Value
+
+* MyDataSourceValueConfig
+```java
+@Slf4j
+ @Configuration
+ public class MyDataSourceValueConfig {
+    @Value("${my.datasource.url}")
+private String url;
+    @Value("${my.datasource.username}")
+ private String username;
+    @Value("${my.datasource.password}")
+ private String password;
+    @Value("${my.datasource.etc.max-connection:2}") // 이런식으로 :2 라고 뒤에 적어주면 my.datasource.etc.max-connection값이 설정파일에없을때 기본값 2로들어감
+ private int maxConnection;
+    @Value("${my.datasource.etc.timeout}")
+ private Duration timeout;
+    @Value("${my.datasource.etc.options}")
+ private List<String> options;
+    @Bean
+ public MyDataSource myDataSource1() {
+ return new MyDataSource(url, username, password, maxConnection, timeout, options);
+    }
+
+    @Bean
+ public MyDataSource myDataSource2(
+            @Value("${my.datasource.url}") String url,
+            @Value("${my.datasource.username}") String username,
+            @Value("${my.datasource.password}") String password,
+            @Value("${my.datasource.etc.max-connection:2}") int maxConnection,
+            @Value("${my.datasource.etc.timeout}") Duration timeout,
+            @Value("${my.datasource.etc.options}") List<String> options) {
+ return new MyDataSource(url, username, password, maxConnection, timeout, 
+options);
+    }
+ }
+```
+두가지 방법 사용가능 설정클레스에서 변수에 `@Value("${my.datasource.etc.timeout}")`위에 적어주면 들어감  
+또는 bean 함수 매개변수에 `@Value("${my.datasource.url}") String url`로 받음  
+`@Value("${my.datasource.etc.max-connection:2}")`이런식으로 `:2` 라고 뒤에 적어주면 `my.datasource.etc.max-connection`값이 설정파일에없을때 기본값 2로들어감  
+
+이 방법도 아까보다는 편하지만 결국 `my.datasource.etc.options`다 써줘야하는 불편함 있음  
+결국 `my.datasource`로 묶이는 값들인데 한번에 어떤 클래스 vo같은 거로 만들어주면 좋지않을까? 해서 나온것이 `@ConfigurationProperties` 이건 다음에  
+
