@@ -7631,3 +7631,170 @@ options);
 이 방법도 아까보다는 편하지만 결국 `my.datasource.etc.options`다 써줘야하는 불편함 있음  
 결국 `my.datasource`로 묶이는 값들인데 한번에 어떤 클래스 vo같은 거로 만들어주면 좋지않을까? 해서 나온것이 `@ConfigurationProperties` 이건 다음에  
 
+---
+## 20240602
+## 스프링 시큐리티 회원가입시 중복확인과 로그인시 시큐리티에 정보넘기기
+
+### 시큐리티 회원가입 중복확인  
+특별한건 없다. 회원가입쪽은 시큐리티를 타지않기때문에 우리가 생각하는 서비스단에서 검증 로직만 넣어주는것  
+
+* repository
+```java
+public interface UserRepository extends JpaRepository<UserEntity, Integer> {
+
+    boolean existsByUsername(String username);
+}
+```
+존재하냐 하는 jpa 함수 만들어주고 
+
+* service
+```java
+@Service
+public class JoinService {
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private BCryptPasswordEncoder bCryptPasswordEncoder;
+
+
+    public void joinProcess(JoinDTO joinDTO) {
+
+
+        //db에 이미 동일한 username을 가진 회원이 존재하는지?
+        boolean isUser = userRepository.existsByUsername(joinDTO.getUsername());
+        if (isUser) {
+            return;
+        }
+
+
+        UserEntity data = new UserEntity();
+
+        data.setUsername(joinDTO.getUsername());
+        data.setPassword(bCryptPasswordEncoder.encode(joinDTO.getPassword()));
+        data.setRole("ROLE_USER");
+
+
+        userRepository.save(data);
+    }
+}
+```
+`boolean isUser = userRepository.existsByUsername(joinDTO.getUsername());`이거 넣어서 확인한번 해주는것  
+
+### 로그인시 시큐리티에 정보넘기기
+
+![1](https://github.com/justindevcode/TIL/assets/108222981/2f0e5f96-ad6b-4e9e-9798-8f2aab57fafb)  
+
+인증  
+시큐리티를 통해 인증을 진행하는 방법은 사용자가 Login 페이지를 통해 아이디, 비밀번호를 POST 요청시 스프링 시큐리티가 데이터베이스에 저장된 회원 정보를 조회 후 비밀번호를 검증하고 서버 세션 저장소에 해당 아이디에 대한 세션을 저장한다.  
+
+* CustomUserDetailsService
+```java
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+
+    @Autowired
+    private UserRepository userRepository;
+
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+
+        UserEntity userData = userRepository.findByUsername(username);
+
+        if (userData != null) {
+
+            return new CustomUserDetails(userData);
+        }
+
+        return null;
+    }
+}
+```
+위 사진을보면 시큐리티는 UserDetailsService를 상속받은 클레스를 통해서 유저에 관한 이런저런 로직처리를 하게된다. (이게 일반적인 service단과 별개인 이유)  
+
+* repository
+```java
+public interface UserRepository extends JpaRepository<UserEntity, Integer> {
+
+    boolean existsByUsername(String username);
+
+
+    UserEntity findByUsername(String username);
+}
+```
+레포지토리는 같은것을 사용하기에 필요한 jpa함수를 다시 만들어준다.  
+
+* UserDetails
+```java
+public class CustomUserDetails implements UserDetails {
+
+    private UserEntity userEntity;
+
+    public CustomUserDetails(UserEntity userEntity) { 
+
+        this.userEntity = userEntity;
+    }
+
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() { //진짜 엔티티에 저장된 role정보를 Details에 담아서 저장
+
+        Collection<GrantedAuthority> collection = new ArrayList<>();
+
+        collection.add(new GrantedAuthority() {
+
+            @Override
+            public String getAuthority() {
+
+                return userEntity.getRole();
+            }
+        });
+
+        return collection;
+    }
+
+    @Override
+    public String getPassword() { //비밀번호
+        return userEntity.getPassword();
+    }
+
+    @Override
+    public String getUsername() { //유저이름
+        return userEntity.getUsername();
+    }
+
+
+    @Override
+    public boolean isAccountNonExpired() { //이 아래로는 유저 만료시간같은것들 값임 유저 엔티티에 이런 필드만들어서 똑같이 사용가능한듯 jwt할때 사용?
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() { //지금은 사용하지않아서 일단 다 true 로 반환
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return true;
+    }
+}
+```
+그리고 유저에 관한 엔티티도 `UserDetails`를 상속받은 객체를 사용해서 시큐리티에서 확인하기때문에 각 내용에 대한 것들 진짜 `userEntity`에서 변환에서 시큐리티로 넘겨줘야한다.  
+
+이를 통해서 로그인을 진행할때 시큐리티를 통과하며 `getAuthorities`의 값을통해서 이 유저가 어떤 권한이 있으며  
+시큐리티 설정값에서 엔트포인트로 접근가능한지 확인가능하다.  
+
+### 참조자료
+https://substantial-park-a17.notion.site/27aecc31ca1f4e89bb424d3b4ee00875  
+https://substantial-park-a17.notion.site/8-DB-147df9c034ba495cad1c62869408be8f  
+https://www.youtube.com/watch?v=MebrJCxjc6s&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=9  
+https://www.youtube.com/watch?v=U3Jkuy5Hc00&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=10  
+
