@@ -7796,5 +7796,179 @@ public class CustomUserDetails implements UserDetails {
 https://substantial-park-a17.notion.site/27aecc31ca1f4e89bb424d3b4ee00875  
 https://substantial-park-a17.notion.site/8-DB-147df9c034ba495cad1c62869408be8f  
 https://www.youtube.com/watch?v=MebrJCxjc6s&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=9  
-https://www.youtube.com/watch?v=U3Jkuy5Hc00&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=10  
+https://www.youtube.com/watch?v=U3Jkuy5Hc00&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=10 
+
+---
+## 20240603
+### 외부설정 @ConfigurationProperties
+
+#### @ConfigurationProperties
+외부설정 깊이 네이밍따라서 그데로 객체로 만들어줄 수 있다.  
+
+* 설정값 객체
+```java
+@Data
+ @ConfigurationProperties("my.datasource")
+ public class MyDataSourcePropertiesV1 {
+ private String url;
+ private String username;
+ private String password;
+ private Etc etc = new Etc();
+    @Data
+ public static class Etc {
+ private int maxConnection;
+ private Duration timeout;
+    }
+ private List<String> options = new ArrayList<>();
+ }
+```
+`my.datasource`라고 되어있는 url, username, password를 위 객체 그데로받고  
+설정파일에 `my.datasource.etc`로 한칸더 깊은건 내부 클래스로 하나더 만들어주면 그게 딱 들어가게된다.  
+기본 주입방식은 getter setter를 이용하기에 @Data를 붙여줬다.  
+
+* 빈등록 클래스
+```java
+@Slf4j
+ @EnableConfigurationProperties(MyDataSourcePropertiesV1.class)
+ public class MyDataSourceConfigV1 {
+ private final MyDataSourcePropertiesV1 properties;
+ public MyDataSourceConfigV1(MyDataSourcePropertiesV1 properties) {
+ this.properties = properties;
+    }
+    @Bean
+ public MyDataSource dataSource() {
+ return new MyDataSource(
+                properties.getUrl(),
+                properties.getUsername(),
+                properties.getPassword(),
+                properties.getEtc().getMaxConnection(),
+                properties.getEtc().getTimeout(),
+                properties.getEtc().getOptions());
+    }
+ }
+```
+이렇게 넣어서 빈 등록하면 되고 기본적으로 `MyDataSourcePropertiesV1`에서 필드 자료형으로 타입이 맞지않으면 오류띄워준다.  
+그리고 기본적으로 설정파일에는 캐밥케이스? 인가 `max-connection`로 작성하는데 자동으로 `maxConnection` 낙타표기법으로 바꿔준다.  
+
+
+* 컴포넌트 스켄수정
+```java
+ //@Import(MyDataSourceValueConfig.class)
+ @Import(MyDataSourceConfigV1.class)
+ @SpringBootApplication(scanBasePackages = "hello.datasource")
+ public class ExternalReadApplication {...}
+```
+
+이 방식에서는 빈등록할때 `@EnableConfigurationProperties(MyDataSourcePropertiesV1.class)`이런식으로 하나 하나 적어줘야하는데  
+`@ConfigurationPropertiesScan`을 사용하게되면 해당 어노테이션 하위로 `@ConfigurationProperties`된걸 다 인식해서 사용할 수 있어서 편해진다.  
+
+```java
+@SpringBootApplication
+ @ConfigurationPropertiesScan({ "com.example.app", "com.example.another" })
+ public class MyApplication {}
+```
+
+지금 이 방식의 문제는 setter를 사용하는 방식으로 빈등록과정에서 누가 setter로 값을 변경해서 빈등록할 수 있다.  
+설정파일의 핵심은 외부설정값 그데로 이용하는것인데 이때문에 생성자 주입 방식을 사용해야한다.  
+
+#### @ConfigurationProperties 생성자
+
+* MyDataSourcePropertiesV2
+```java
+ @Getter
+ @ConfigurationProperties("my.datasource")
+ public class MyDataSourcePropertiesV2 {
+ private String url;
+ private String username;
+ private String password;
+ private Etc etc;
+ public MyDataSourcePropertiesV2(String url, String username, String 
+password, @DefaultValue Etc etc) {
+ this.url = url;
+ this.username = username;
+ this.password = password;
+ this.etc = etc;
+    }
+    @Getter
+ public static class Etc {
+ private int maxConnection;
+ private Duration timeout;
+ private List<String> options;
+public Etc(int maxConnection, Duration timeout, @DefaultValue("DEFAULT") 
+List<String> options) {
+ this.maxConnection = maxConnection;
+ this.timeout = timeout;
+ this.options = options;
+        }
+    }
+ }
+```
+
+`MyDataSourceConfigV2` ` ExternalReadApplication`도 수정한다.  
+
+위처럼 getter와 생성자만 놔두면 생성자 주입 방식으로 넣어주게된다.  
+
+다만 마지막 문제는 기본적으로 타입 확인은 해주지만 int이긴한데 1~99까지만 가능 이런식으로 범위를 조절하고싶다면?  
+
+객체를 사용하기때문에 ` spring-boot-starter-validation`를 사용할 수 있다 이를 적용하면된다.  
+
+#### @ConfigurationProperties 검증
+
+* build.gradle
+```java
+implementation 'org.springframework.boot:spring-boot-starter-validation'
+```
+
+* MyDataSourcePropertiesV3
+```java
+ @Getter
+ @ConfigurationProperties("my.datasource")
+ @Validated
+ public class MyDataSourcePropertiesV3 {
+    @NotEmpty
+ private String url;
+    @NotEmpty
+ private String username;
+    @NotEmpty
+ private String password;
+ private Etc etc;
+ public MyDataSourcePropertiesV3(String url, String username, String 
+password, Etc etc) {
+ this.url = url;
+ this.username = username;
+ this.password = password;
+ this.etc = etc;
+    }
+    @Getter
+ public static class Etc {
+        @Min(1)
+        @Max(999)
+ private int maxConnection;
+        @DurationMin(seconds = 1)
+        @DurationMax(seconds = 60)
+ private Duration timeout;
+ private List<String> options;
+ public Etc(int maxConnection, Duration timeout, List<String> options) {
+ this.maxConnection = maxConnection;
+this.timeout = timeout;
+ this.options = options;
+        }
+    }
+ }
+```
+`@Validated` 붙여주고 
+`jakarta.validation.constraints.Max`의 공식 검증 어노테이션이나 `org.hibernate.validator.constraints.time.DurationMax`같은 추가 구현체를 사용하면된다.  
+공식은 아니더라도 대부분 하이버네이트 사용해서 상세한 검증은 이를 그냥 써도된다.  
+
+`MyDataSourceConfigV3` ` ExternalReadApplication`도 수정한다.  
+
+` maxConnection=0`으로 설정하게되면  
+
+```java
+ Property: my.datasource.etc.maxConnection
+    Value: "0"
+    Origin: class path resource [application.properties] - 4:34
+    Reason: 1 이상이어야 합니다
+```
+이런식으로 오류코드 띄워준다.  
 
