@@ -7972,3 +7972,124 @@ this.timeout = timeout;
 ```
 이런식으로 오류코드 띄워준다.  
 
+---
+## 20240604
+### 스프링 시큐리티 세션
+
+시큐리티에서 저장된 세션정보를 꺼내쓸 수 있는 코드  
+
+* ID
+`String id = SecurityContextHolder.getContext().getAuthentication().getName();`
+
+* ROLE
+```
+Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+Iterator<? extends GrantedAuthority> iter = authorities.iterator();
+GrantedAuthority auth = iter.next();
+String role = auth.getAuthority();
+```
+
+그냥 이코드 Service단 에서 박아서 쓰면 시큐리티에 저장중인 현재 로그인중인 사용자의 정보 꺼내서 id랑 role값 받을 수 있다.  
+
+#### 세션 설정
+
+* 로그인 정보
+
+사용자가 로그인을 진행한 뒤 사용자 정보는 SecurityContextHolder에 의해서 서버 세션에 관리된다.  
+이때 세션에 관해 세션의 소멸 시간, 아이디당 세션 생성 개수를 설정하는 방법에 대해서 알아보자.  
+
+* 세션 소멸 시간 설정
+
+세션 타임아웃 설정을 통해 로그인 이후 세션이 유지되고 소멸하는 시간을 설정할 수 있다.  
+세션 소멸 시점은 서버에 마지막 특정 요청을 수행한 뒤 설정한 시간 만큼 유지된다. (기본 시간 1800초)  
+글쓰는 사람이 30분동안 편집하다 저장 요청보내면 작성글 증발할 수 있다. 서비스에따라서 유동적으로 설정하자.  
+
+* application.properties
+```
+//초 기반
+server.servlet.session.timeout=1800
+
+//분 기반
+server.servlet.session.timeout=90m
+```
+
+* 다중 로그인 설정
+
+https://docs.spring.io/spring-security/reference/servlet/authentication/session-management.html  
+
+사용자가 여러 브라우저에서 로그인할경우 몇개까지 유지해줄것인지 그부분  
+
+* SecurityConfig
+```java
+@Bean
+public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
+
+    http
+            .sessionManagement((auth) -> auth
+                    .maximumSessions(1)
+                    .maxSessionsPreventsLogin(true));
+
+    return http.build();
+}
+```
+sessionManagement() 메소드를 통한 설정을 진행한다.  
+maximumSession(정수) : 하나의 아이디에 대한 다중 로그인 허용 개수  
+maxSessionPreventsLogin(불린) : 다중 로그인 개수를 초과하였을 경우 처리 방법  
+true : 초과시 새로운 로그인 차단  
+false : 초과시 기존 세션 하나 삭제  
+
+* 세션 고정 보호
+
+![1](https://github.com/justindevcode/TIL/assets/108222981/4216327c-5944-4628-bead-8cb0d0c671e3)  
+![1](https://github.com/justindevcode/TIL/assets/108222981/a6026f0e-e9cf-4a6d-a2d4-c33361841aea)  
+
+공격자가 서버에 접속을 하면 서버는 공격자에게 JSESSIONID를 발급한다.  
+공격자는 사용자에게 자신이 받은 세션 쿠키를 심어놓는다.  
+사용자는 공격자가 심어놓은 세션 쿠키를 이용해 서버로 접근한다.  
+공격자와 사용자 모두가 세션을 공유하기 때문에 공격자가 해당 세션으로 접근할 수 있다. -> 사용자 정보 공유
+
+이것이 세션 고정 공격  
+
+해결법은 인증할때마다 새로운 세션 생성하며 쿠키로 새로운걸 주는것  
+
+세션 고정 공격을 보호하기 위한 로그인 성공시 세션 설정 방법은 sessionManagement() 메소드의 sessionFixation() 메소드를 통해서 설정할 수 있다.  
+sessionManagement().sessionFixation().none() : 로그인 시 세션 정보 변경 안함  
+sessionManagement().sessionFixation().newSession() : 로그인 시 세션 새로 생성  
+sessionManagement().sessionFixation().changeSessionId() : 로그인 시 동일한 세션에 대한 id 변경  
+
+* 공식 문서 코드
+```java
+@Bean
+public SecurityFilterChain filterChain(HttpSecurity http) {
+    http
+        .sessionManagement((session) - session
+            .sessionFixation((sessionFixation) -> sessionFixation
+                .newSession()
+            )
+        );
+
+    return http.build();
+}
+```
+
+* 구현코드
+```java
+@Bean
+public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
+
+    http
+            .sessionManagement((auth) -> auth
+                    .sessionFixation().changeSessionId());
+
+    return http.build();
+}
+```
+
+#### 참조
+https://www.youtube.com/watch?v=t-TsjyBmHcQ&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=11  
+https://substantial-park-a17.notion.site/9-9f5d711ee983420f810165dcf19cbc4a  
+https://www.youtube.com/watch?v=SsdDnI3bHcI&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=12  
+https://substantial-park-a17.notion.site/10-36136f5a91f647b499dbcb5a884aff72  
+
