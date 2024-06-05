@@ -8165,3 +8165,96 @@ my:
 설정 프로필 변경이 아니라 결제같이 로컬에서는 가짜로 실제로 배포할때 외부결제기능 붙이려고  
 이런식으로 사용 객체를 다르게할때는 `@Profile("prod")`를 통해서 프로필에따라 사용 빈 객체 설정가능하다.  
 내부적으로 전에 배웠던 `@Conditional`사용하게된다.  
+
+---
+## 20240606
+### 스프링 시큐리티 csrf
+
+* API서버에서 JWT stateless한경우에는 
+
+앱에서 사용하는 API 서버의 경우 보통 세션을 STATELESS로 관리하기 때문에 스프링 시큐리티 csrf enable 설정을 진행하지 않아도 된다.  
+
+* ssl, 세션 stateless 하지않은 상테에서는 csrf설정을 켜서 진행해줘야한다.  
+
+CSRF(Cross-Site Request Forgery)는 요청을 위조하여 사용자가 원하지 않아도 서버측으로 특정 요청을 강제로 보내는 방식이다. (회원 정보 변경, 게시글 CRUD를 사용자 모르게 요청)  
+
+시큐리티  config에서 csrf 비활성화 해둔것 지워서 다시 활성화
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception{
+
+//        http
+//                .csrf((auth) -> auth.disable());
+
+
+        return http.build();
+    }
+}
+```
+security config 클래스에서 csrf.disable() 설정을 진행하지 않으면 자동으로 enable 설정이 진행된다. enable 설정시 스프링 시큐리티는 CsrfFilter를 통해 POST, PUT, DELETE 요청에 대해서 토큰 검증을 진행한다.  
+
+* POST 요청에서 설정 방법 (mustache 기준)
+```html
+<form action="/loginReceiver" method="post" name="loginForm">
+    <input type="text" name="username" placeholder="아이디"/>
+    <input type="password" name="password" placeholder="비밀번호"/>
+    <input type="hidden" name="_csrf" value="{{_csrf.token}}"/>
+    <input type="submit" value="로그인"/>
+</form>
+```
+`<input type="hidden" name="_csrf" value="{{_csrf.token}}"/>`추가  
+
+* ajax 요청시 HTML <head> 구획에 아래 요소 추가
+```html
+<meta name="_csrf" content="{{_csrf.token}}"/>
+<meta name="_csrf_header" content="{{_csrf.headerName}}"/>
+```
+ajax 요청시 위의 content 값을 가져온 후 함께 요청  XMLHttpRequest 요청시 setRequestHeader를 통해 _csrf, _csrf_header Key에 대한 토큰 값 넣어 요청  
+
+* 중요한점은 로그아웃시에 기본적인 get방식의 로그아웃이 불가능하고 토큰때문에 새로운 엔드포인트 만들어줘야한다.
+
+* security config 클래스 로그아웃 설정
+```java
+@Bean
+public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception{
+
+    http
+            .logout((auth) -> auth.logoutUrl("/logout")
+                    .logoutSuccessUrl("/"));
+
+    return http.build();
+}
+```
+
+* logoutcontroller
+```java
+@Controller
+public class logoutController {
+
+    @GetMapping("/logout")
+    public String logout(HttpServletRequest request, HttpServletResponse response) throws Exception {
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if(authentication != null) {
+            new SecurityContextLogoutHandler().logout(request, response, authentication);
+        }
+
+        return "redirect:/";
+    }
+}
+```
+이런식으로 시큐리티 설정과 컨트롤러단에서 토큰직접받아서 시큐리티 로그아웃 로직 돌려줘야한다.  
+
+* mustache 오류발생시
+
+mustache에서 csrf 토큰 변수 오류 발생시 아래 구문을 변수 설정 파일에 추가  
+
+* application.properties
+```java
+spring.mustache.servlet.expose-request-attributes=true
+```
