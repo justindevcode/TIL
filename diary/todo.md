@@ -8093,3 +8093,75 @@ https://substantial-park-a17.notion.site/9-9f5d711ee983420f810165dcf19cbc4a
 https://www.youtube.com/watch?v=SsdDnI3bHcI&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=12  
 https://substantial-park-a17.notion.site/10-36136f5a91f647b499dbcb5a884aff72  
 
+---
+## 202240605
+### 스프링 YAML과 @Profile
+
+#### YAML
+
+```yaml
+my:
+	datasource:
+		url: local.db.com
+		username: local_user
+		password: local_pw
+	etc:
+		maxConnection: 2
+		timeout: 60s
+		options: LOCAL, CACHE
+---
+spring:
+	config:
+		activate:
+		on-profile: dev
+my:
+	datasource:
+		url: dev.db.com
+		username: dev_user
+		password: dev_pw
+	etc:
+		maxConnection: 10
+		timeout: 60s
+		options: DEV, CACHE
+---
+spring:
+	config:
+		activate:
+			on-profile: prod
+my:
+	datasource:
+		url: prod.db.com
+		username: prod_user
+		password: prod_pw
+	etc:
+		maxConnection: 50
+		timeout: 10s
+		options: PROD, CACHE
+```
+계층적으로 보기편한 yaml파일이다. 프로필도 설정가능하고 한데 중요한점은 스프링은 이 파일을 `.properties`로 변환해서 읽는다는것만 생각해두자  
+
+#### @Profile
+
+* config 파일
+```java
+ @Slf4j
+ @Configuration
+ public class PayConfig {
+를 주입받는다.
+    @Bean
+    @Profile("default")
+ public LocalPayClient localPayClient() {
+        log.info("LocalPayClient 빈 등록");
+ return new LocalPayClient();
+    }
+    @Bean
+    @Profile("prod")
+ public ProdPayClient prodPayClient() {
+        log.info("ProdPayClient 빈 등록");
+ return new ProdPayClient();
+    }
+ }
+```
+설정 프로필 변경이 아니라 결제같이 로컬에서는 가짜로 실제로 배포할때 외부결제기능 붙이려고  
+이런식으로 사용 객체를 다르게할때는 `@Profile("prod")`를 통해서 프로필에따라 사용 빈 객체 설정가능하다.  
+내부적으로 전에 배웠던 `@Conditional`사용하게된다.  
