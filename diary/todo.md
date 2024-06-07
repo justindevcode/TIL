@@ -8258,3 +8258,164 @@ mustache에서 csrf 토큰 변수 오류 발생시 아래 구문을 변수 설�
 ```java
 spring.mustache.servlet.expose-request-attributes=true
 ```
+
+---
+## 20240607
+### 스프링 엑츄에이터
+
+#### 프로덕션 준비 기능  
+서비스를 실제로 올리게되면 기획자가 말하지않은 시스템에 대한 모니터링 지표를 개발자는 확인해야한다.  
+지표, 추적, 감사  
+모니터링  
+
+이런부분들 구축해야하는데 엑츄에이터라이브러리를 사용하면 많이 편리해진다.  
+
+* build.gradle
+```java
+ dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator' //actuator 추가
+    compileOnly 'org.projectlombok:lombok'
+    runtimeOnly 'com.h2database:h2'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test' //test lombok 사용
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+ }
+```
+연습프로젝트 보면 `implementation 'org.springframework.boot:spring-boot-starter-actuator' //actuator 추가`추가  
+
+프로젝트 실행후 `http://localhost:8080/actuator` 들어가보면 
+
+```html
+ {
+  "_links": {
+    "self": {
+      "href": "http://localhost:8080/actuator",
+      "templated": false
+    },
+    "health-path": {
+      "href": "http://localhost:8080/actuator/health/{*path}",
+      "templated": true
+    },
+    "health": {
+      "href": "http://localhost:8080/actuator/health",
+      "templated": false
+    }
+  }
+ }
+```
+
+이런 결과 얻을 수 있다.  
+
+*  http://localhost:8080/actuator/health
+```html
+ {"status": "UP"}
+```
+또 들어가보면 이런 정보 확인가능  
+
+* application.yml
+```yml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+```
+기능 모두 사용하는 설정?  
+
+
+* 다시 `http://localhost:8080/actuator` 들어가보면
+```html
+ {
+ **
+ `
+ http://localhost:8080/actuator 실행
+"_links": {
+ "self": {
+ "href": "http://localhost:8080/actuator",
+ "templated": false
+    },
+ "beans": {
+ "href": "http://localhost:8080/actuator/beans",
+ "templated": false
+    },
+ "caches": {
+ "href": "http://localhost:8080/actuator/caches",
+ "templated": false
+    },
+ "caches-cache": {
+ "href": "http://localhost:8080/actuator/caches/{cache}",
+ "templated": true
+    },
+ "health-path": {
+ "href": "http://localhost:8080/actuator/health/{*path}",
+ "templated": true
+    },
+ "health": {
+ "href": "http://localhost:8080/actuator/health",
+ "templated": false
+    },
+ "info": {
+ "href": "http://localhost:8080/actuator/info",
+ "templated": false
+    },
+ "conditions": {
+ "href": "http://localhost:8080/actuator/conditions",
+ "templated": false
+    },
+ "configprops-prefix": {
+ "href": "http://localhost:8080/actuator/configprops/{prefix}",
+ "templated": true
+    },
+ "configprops": {
+ "href": "http://localhost:8080/actuator/configprops",
+ "templated": false
+    },
+ "env": {
+ "href": "http://localhost:8080/actuator/env",
+ "templated": false
+    },
+ "env-toMatch": {
+ "href": "http://localhost:8080/actuator/env/{toMatch}",
+ "templated": true
+    },
+ "loggers": {
+ "href": "http://localhost:8080/actuator/loggers",
+ "templated": false
+    },
+ "loggers-name": {
+ "href": "http://localhost:8080/actuator/loggers/{name}",
+ "templated": true
+    },
+ "heapdump": {
+ "href": "http://localhost:8080/actuator/heapdump",
+ "templated": false
+    },
+ "threaddump": {
+ "href": "http://localhost:8080/actuator/threaddump",
+ "templated": false
+    },
+ "metrics": {
+ "href": "http://localhost:8080/actuator/metrics",
+ "templated": false
+    },
+ "metrics-requiredMetricName": {
+ "href": "http://localhost:8080/actuator/metrics/{requiredMetricName}",
+ "templated": true
+    },
+ "scheduledtasks": {
+ "href": "http://localhost:8080/actuator/scheduledtasks",
+ "templated": false
+    },
+ "mappings": {
+ "href": "http://localhost:8080/actuator/mappings",
+"templated": false
+    }
+  }
+ }
+```
+액츄에이터가 제공하는 수 많은 기능을 확인할 수 있다.  
+
+`http://localhost:8080/actuator/beans` 이런곳 들어가보면 스프링에 등록한 모든 빈 정보 다 확인가능 이런 편리함 있음  
