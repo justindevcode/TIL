@@ -8419,3 +8419,130 @@ management:
 액츄에이터가 제공하는 수 많은 기능을 확인할 수 있다.  
 
 `http://localhost:8080/actuator/beans` 이런곳 들어가보면 스프링에 등록한 모든 빈 정보 다 확인가능 이런 편리함 있음  
+
+---
+## 20240609
+### 스프링 시큐리티 권한 인증  
+#### 유저 스프링 띄우면서 DB없이 메모리로 저장하기  
+잘 사용하지 않을거같지만 config클래스에서 그냥 코드로 유저 등록해서 자바 메모리로 유저저장하고있을 수 있는 방식  
+
+* 시큐리티 config에 함수추가
+```java
+@Bean
+    public UserDetailsService userDetailsService() {
+
+        UserDetails user1 = User.builder()
+                .username("user1")
+                .password(bCryptPasswordEncoder().encode("1234"))
+                .roles("ADMIN")
+                .build();
+
+        UserDetails user2 = User.builder()
+                .username("user2")
+                .password(bCryptPasswordEncoder().encode("1234"))
+                .roles("USER")
+                .build();
+
+        return new InMemoryUserDetailsManager(user1, user2);
+    }
+```
+
+#### HttpBasic 인증  
+Http Basic 인증 방식은 아이디와 비밀번호를 Base64 방식으로 인코딩한 뒤 HTTP 인증 헤더에 부착하여 서버측으로 요청을 보내는 방식이다.   
+이 설정을 등록하게되면 브라우저 자체에서 아이디 비번 입력창이 뜨면서 로그인하게된다.  
+
+* 시큐리티 config 수정
+```java
+@Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception{
+
+        http
+                .httpBasic(Customizer.withDefaults());
+
+        return http.build();
+    }
+```
+fromLogin 전부 지우고 `.httpBasic(Customizer.withDefaults());`넣으면 적용됨 msa할때 많이씀??  
+
+#### Role Hierarchy  
+계층권한 가장 높은 A권한이 아래단계의 B,C의 접근 권한을 명시안해줘도 접근가능한 설정  
+
+* 기존방식
+```java
+@Bean
+public SecurityFilterChain filterChain(HttpSecurity http) throws Exception{
+
+    http
+            .csrf((auth) -> auth.disable());
+
+    http
+            .authorizeHttpRequests((auth) -> auth
+                    .requestMatchers("/login").permitAll()
+                    .requestMatchers("/").hasAnyRole("A", "B", "C")
+                    .requestMatchers("/manager").hasAnyRole("B", "C")
+                    .requestMatchers("/admin").hasAnyRole("C")
+                    .anyRequest().authenticated()
+            );
+
+    http
+            .formLogin((auth) -> auth.loginPage("/login")
+                    .loginProcessingUrl("/loginProc")
+                    .permitAll()
+            );
+
+    return http.build();
+}
+```
+기존방식 ` .requestMatchers("/").hasAnyRole("A", "B", "C")`이런식으로 전부 등록  
+
+* 계층 메소드 추가
+```java
+@Bean
+public RoleHierarchy roleHierarchy() {
+
+    RoleHierarchyImpl hierarchy = new RoleHierarchyImpl();
+
+    hierarchy.setHierarchy("ROLE_C > ROLE_B\n" +
+            "ROLE_B > ROLE_A");
+
+    return hierarchy;
+}
+```
+
+* 수정
+```java
+@Bean
+public SecurityFilterChain filterChain(HttpSecurity http) throws Exception{
+
+    http
+            .csrf((auth) -> auth.disable());
+
+    http
+            .authorizeHttpRequests((auth) -> auth
+                    .requestMatchers("/login").permitAll()
+                    .requestMatchers("/").hasAnyRole("A")
+                    .requestMatchers("/manager").hasAnyRole("B")
+                    .requestMatchers("/admin").hasAnyRole("C")
+                    .anyRequest().authenticated()
+            );
+
+    http
+            .formLogin((auth) -> auth.loginPage("/login")
+                    .loginProcessingUrl("/loginProc")
+                    .permitAll()
+            );
+
+    return http.build();
+}
+```
+` .requestMatchers("/").hasAnyRole("A")` 간단해짐  
+
+#### 참조
+https://substantial-park-a17.notion.site/12-InMemory-100ab16328a4495d893fc127131e8fd9  
+https://www.youtube.com/watch?v=GbTOoJ0Y5eA&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=14  
+https://substantial-park-a17.notion.site/13-HttpBasic-d472452c72254491b7b82719527e6493  
+https://www.youtube.com/watch?v=7gEqj2_pcto&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=15  
+https://substantial-park-a17.notion.site/14-Role-Hierarchy-198af3068b3f40878174e3af8c8d97d5  
+https://www.youtube.com/watch?v=RnuSJBttJUo&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=16  
+
+---
