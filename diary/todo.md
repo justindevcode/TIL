@@ -8546,3 +8546,165 @@ https://substantial-park-a17.notion.site/14-Role-Hierarchy-198af3068b3f40878174e
 https://www.youtube.com/watch?v=RnuSJBttJUo&list=PLJkjrxxiBSFCKD9TRKDYn7IE96K2u3C3U&index=16  
 
 ---
+## 20240610
+### 엑츄에이터 엔드포인트 종류, 설정, 헬스정보
+
+#### 엑츄에이터 엔트포인트 설정  
+2가지를 조정해줘야하는데 엔드포인트 활성화, 엔드포인트 노출 이다.  
+
+엔드포인트 활성화는 엑츄에이터의 기능을 활성화 할건지 말지  
+엔드포인트 노출은 html등으로 웹에서 그 기능을 노출시킬건지말지 이다.  
+
+활성화는 기본적으로 `shutdown`빼고 모두 활성화되어있다. (`shutdown`은 이거 호출하면 실제 서비스가 꺼짐..)  
+
+* 엔드포인트 노출
+```yml
+ management:
+   endpoints:
+     web:
+       exposure:
+         include: "*"
+```
+
+* shutdown 활성화
+```yml
+management:
+ endpoint:
+ shutdown:
+ enabled: true
+ endpoints:
+ web:
+ exposure:
+ include: "*"
+```
+
+* 하나만 노출
+```yml
+management:
+ endpoints:
+ jmx:
+ exposure:
+ include: "health,info"
+```
+
+* 몇개만 제외
+```yml
+management:
+ endpoints:
+ web:
+ exposure:
+ include: "*"
+ exclude: "env,beans"
+```
+
+#### 다양한 엔드포인트
+
+엔드포인트 목록
+
+* bean
+* conditions (condition통해 빈 등록할지말지 조건이 어떻게 됐는지 확인가능)
+* configprops (@ConfigurationProperties를 보여준다)
+* env (Environment정보)
+* health 애플리케이션 헬스 정보를 보여준다.
+* httpexchanges (http 호출 응답정보 `HttpExchangeRepository`빈 등록해야함)
+* info (애플리케이션 정보)
+* loggers (로거 설정 볼 수 있고 변경도 가능)
+* metrics (RequestMapping 정보)
+* threaddump (쓰레드 덤프를 실행해서 보여준다)
+* shutdown (애플리케이션을 종료한다 기본 비활성화)
+
+전체적으로는 공식문서 참고하기 
+
+#### 몇개 상세하게 알아보기 헬스 정보
+
+헬스 정보는 단순히 애플리케이션이 요청에 응답을 할 수 있는지 판단하는 것을 넘어서 애플리케이션이 사용하는 데이터베이스가 응답하는지, 디스크 사용량에는 문제가 없는지 같은 다양한 정보들을 포함해서 만들어진다.  
+
+`http://localhost:8080/actuator/health`
+
+* 기본동작
+```html
+ {"status": "UP"}
+```
+
+* 더 자세히
+```yml
+management:
+  endpoint:
+    health:
+      show-details: always
+```
+
+* 활성화하면 나오는거
+```html
+{
+ `
+ "status": "UP",
+ "components": {
+ "db": {
+ "status": "UP",
+ "details": {
+ "database": "H2",
+ "validationQuery": "isValid()"
+      }
+    },
+ "diskSpace": {
+ "status": "UP",
+ "details": {
+ "total": 994662584320,
+ "free": 303418753024,
+ "threshold": 10485760,
+ "path": ".../spring-boot/actuator/actuator/.",
+ "exists": true
+      }
+    },
+ "ping": {
+ "status": "UP"
+    }
+  }
+}
+```
+
+* 너무 자세하니 좀더 간략하게만
+```yml
+management:
+  endpoint:
+    health:
+      show-components: always
+```
+* 결과
+```html
+ {
+ **
+ "status": "UP",
+ "components": {
+ "db": {
+ "status": "UP"
+    },
+ "diskSpace": {
+ "status": "UP"
+    },
+ "ping": {
+ "status": "UP"
+    }
+  }
+ }
+```
+
+* 이상상태일때
+```html
+  {
+ "status": "DOWN",
+ "components": {
+ "db": {
+ "status": "DOWN"
+    },
+ "diskSpace": {
+ "status": "UP"
+    },
+ "ping": {
+ "status": "UP"
+.
+.
+.
+```
+하나만 down이 떠도 상태는 down  
