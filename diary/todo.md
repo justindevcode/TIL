@@ -8708,3 +8708,235 @@ management:
 .
 ```
 하나만 down이 떠도 상태는 down  
+
+---
+## 20240611
+### msa환경 도커컴포즈, 로컬 환경변수 선택가능하게, 스웨거
+원래 상태가 
+
+* DB 컴포즈
+```yml
+version: "3.8"
+
+services:
+  lucycato-mysql:
+    container_name: lucycato-mysql
+    image: mysql:8.0.29
+    networks:
+      - "lucycato_network"
+    user: 1000:1000
+    environment:
+      - MYSQL_ROOT_PASSWORD=password
+      - MYSQL_DATABASE=default
+      - MYSQL_USER=admin
+      - MYSQL_PASSWORD=password
+      - TZ=Asia/Seoul
+    ports:
+      - "23306:3306"
+    command: [
+      '--character-set-server=utf8mb4',
+      '--collation-server=utf8mb4_general_ci',
+      '--lower_case_table_names=1'
+    ]
+
+#  lucycato-phpmyadmin:
+#    container_name: lucycato-phpmyadmin
+#    image: phpmyadmin/phpmyadmin:5.0.4
+#    depends_on:
+#      - lucycato-mysql
+#    environment:
+#      - PMA_HOST=lucycato-mysql
+#      - MYSQL_ROOT_PASSWORD=password
+#    ports:
+#      - "20080:80"
+#    networks:
+#      - "lucycato_network"
+
+  lucycato-redis:
+    container_name: lucycato-redis
+    image: redis:latest
+    command: redis-server
+    ports:
+      - "26379:6379"
+    volumes:
+      - ./data/redis:/data
+    networks:
+      - "lucycato_network"
+
+  lucycato-zookeeper:
+    container_name: lucycato-zookeeper
+    image: zookeeper:3.9.2
+    networks:
+      - "lucycato_network"
+    ports:
+      - '22181:2181'
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+      - ZOO_TLS_CLIENT_AUTH=none
+      - ZOO_TLS_QUORUM_CLIENT_AUTH=none
+
+  lucycato-kafka:
+    container_name: lucycato-kafka
+    image: bitnami/kafka:latest
+    networks:
+      - "lucycato_network"
+    ports:
+      - "9092:9092"
+    environment:
+      - KAFKA_CFG_NODE_ID=0
+      - KAFKA_CFG_PROCESS_ROLES=controller,broker
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      - KAFKA_CFG_CONTROLLER_QUORUM_VOTERS=0@lucycato-kafka:9093
+      - KAFKA_CFG_CONTROLLER_LISTENER_NAMES=CONTROLLER
+    depends_on:
+      - lucycato-zookeeper
+
+#  lucycato-kafka-ui:
+#    container_name: lucycato-kafka-ui
+#    image: provectuslabs/kafka-ui
+#    networks:
+#      - "lucycato_network"
+#    ports:
+#      - "28989:8080"
+#    depends_on:
+#      - lucycato-kafka
+#      - lucycato-zookeeper
+#    environment:
+#      - KAFKA_CLUSTERS_0_NAME=local
+#      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=lucycato-lucycato-kafka:9092
+#      - KAFKA_CLUSTERS_0_ZOOKEEPER=lucycato-zookeeper:2181
+
+networks:
+  lucycato_network:
+    driver: bridge
+
+```
+
+* 서버 컴포즈
+```yml
+      - "5005:5005"
+    environment:
+      - JAVA_TOOL_OPTIONS=-agentlib:jdwp=transport=dt_socket,address=*:5005,server=y,suspend=n
+      - KAFKA_CLUSTERS_BOOTSTRAPSERVERS=lucycato-kafka:9092
+      - SPRING_DATASOURCE_URL=jdbc:mysql://lucycato-mysql:3306/default
+      - SPRING_DATASOURCE_USERNAME=admin
+      - SPRING_DATASOURCE_PASSWORD=password
+      - SPRING_DATASOURCE_DRIVER-CLASS-NAME=com.mysql.cj.jdbc.Driver
+      - SPRING_JPA_HIBERNATE_DDL-AUTO=create
+      - SPRING_JPA_SHOW-SQL=true
+      - SPRING_JPA_PROPERTIES_HIBERNATE_FORMAT_SQL=true
+      - SPRING_DATA_REDIS_HOST=lucycato-redis
+      - SPRING_DATA_REDIS_PORT=6379
+  user-auth-query-service:
+    image: lucycato/lucycato-e-commerce-user-auth-query-service:1.0.0
+    networks:
+      - "lucycato_network"
+    ports:
+      - "8081:8080"
+    environment:
+      - KAFKA_CLUSTERS_BOOTSTRAPSERVERS=lucycato-kafka:9092
+  notification-command-service:
+    image: lucycato/lucycato-e-commerce-notification-command-service:1.0.0
+    networks:
+      - "lucycato_network"
+    ports:
+      - "8082:8080"
+    environment:
+.
+.
+.
+```
+이런식으로 컴포즈파일 하나만 되어있었는데 db는 그데로 쓰고 컴포즈쪽 환경설정을 yml로 다 옴기고 컴포즈에서는 스프링 프로필설정만 하도록 해주었다.  
+```yml
+spring:
+  config:
+    activate:
+      on-profile: default
+
+  datasource:
+    url: jdbc:mysql://localhost:23306/default
+    username: admin
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: localhost
+      port: 26379
+
+kafka:
+  clusters:
+    bootstrapservers: localhost:9092
+
+
+---
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  datasource:
+    url: jdbc:mysql://lucycato-mysql:3306/default
+    username: admin
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: lucycato-redis
+      port: 6379
+
+kafka:
+  clusters:
+    bootstrapservers: lucycato-kafka:9092
+
+
+---
+spring:
+  config:
+    activate:
+      on-profile: service_local_db_server
+
+  datasource:
+    url: jdbc:mysql://hometo.store:23306/default
+    username: admin
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: hometo.store
+      port: 26379
+
+kafka:
+  clusters:
+    bootstrapservers: hometo.store:9092
+```
+일단 이런식  
+좀더 복잡해지면 파일 아에 두개로 나누거나 공통은 local로 묶고 해야할듯  
+
+이렇게하니 로컬에서는 run쪽에 새로운설정 compound라고 여러 스프링부트 run 메소드 묶어서 실행해주는거 있는데 그거 실행하면 로컬에서 여러 서비스 실행가능  
+
+#### 스웨거
+
+`implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.1.0'` 완전히 옛날거가 안되서 새로찾았더니 이건된다. 그외 yml설정이나 config는 똑같이해도 되더라  
