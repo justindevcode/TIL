@@ -9011,3 +9011,232 @@ public class Main {
 크게 어렵지는 않았는데 deque를 동적으로 생성하는부분
 `List<Deque<Integer>> dequeList = new ArrayList<>();` ` dequeList.add(new ArrayDeque<>());`
 이부분조금 염두해둘 필요가 있다.  
+
+---
+## 20240613
+### 스프링 엑츄에이터 어플레케이션 정보, 로거, http응답기록, 보안
+
+#### 어플리케이션 정보
+info 엔드포인트는 애플리케이션의 기본 정보를 노출한다  
+
+java, os, env, build, git
+
+java, os, env는 기본 비활성화되어있다.  
+
+* yml java os 활성화
+```yml
+ management:
+     info:
+         java:
+             enabled: true
+         os:
+             enabled: true
+```
+
+*  http://localhost:8080/actuator/info
+```html
+{
+ }
+ "java":{
+ "version":"17.0.3",
+ "vendor":{
+ "name":"JetBrains s.r.o.",
+ "version":"JBR-17.0.3+7-469.37-jcef"
+      },
+ "runtime":{
+ "name":"OpenJDK Runtime Environment",
+ "version":"17.0.3+7-b469.37"
+      },
+ "jvm":{
+ "name":"OpenJDK 64-Bit Server VM",
+ "vendor":"JetBrains s.r.o.",
+ "version":"17.0.3+7-b469.37"
+      }
+   },
+ "os":{
+ "name":"Mac OS X",
+ "version":"12.5.1",
+ "arch":"aarch64"
+   }
+```
+
+* yml env active
+```yml
+ management:
+ info:
+ env:
+ enabled: true
+ info:
+ app:
+ name: hello-actuator
+ company: yh
+```
+
+*  http://localhost:8080/actuator/info
+```html
+{
+ "app":{
+ "name":"hello-actuator",
+ "company":"yh"
+   }
+   ...
+}
+```
+yml에 info로 시작한 환경변수들이 나오는걸 확인 할 수 있다.  
+
+* build 정보 노출
+* build.gralde
+```java
+springBoot {
+ buildInfo()
+}
+```
+build정보를 노출하기위해서는 빌드완료된 파일에 `resources/main/META-INF/build-info.properties`파일이 필요한데 스프링에서 다 만들어주었다.  
+위 내용을 gralde에 추가만 하면 빌드할때 같이 자동으로 만들어준다.  
+
+*  http://localhost:8080/actuator/info
+```html
+ {
+"build":{
+    "artifact":"actuator",
+    "name":"actuator",
+    "time":"2023-01-01T00:00:00.000Z",
+    "version":"0.0.1-SNAPSHOT",
+    "group":"hello"
+}
+```
+
+* git 정보 확인
+* build.gradle
+```java
+plugins {
+...
+id "com.gorylenko.gradle-git-properties" version "2.4.1" //git info
+}
+```
+gradle쪽에 plugins 쪽에 추가가 하나필요하고 기본적으로 프로젝트가 git으로 관리되어야한다.  
+
+* resources/main/git.properties
+```
+git.branch=main
+git.build.host=kim
+git.build.user.email=zipkyh@mail.com
+git.build.user.name=holyeye
+git.build.version=0.0.1-SNAPSHOT
+git.closest.tag.commit.count=
+git.closest.tag.name=
+git.commit.id=754bc78744107b6423352018e46367f5091b181e
+git.commit.id.abbrev=754bc78
+git.commit.id.describe=
+git.commit.message.full=fitst commit\n
+git.commit.message.short=fitst commit
+git.commit.time=2023-01-01T00\:00\:00+0900
+git.commit.user.email=zipkyh@mail.com
+git.commit.user.name=holyeye
+git.dirty=false
+git.remote.origin.url=
+git.tags=
+git.total.commit.count=1
+```
+빌드하고 빌트 파일에 보면 이러한 정보를 담은 파일이 새로 만들어진다. 이를보고 나타내줌  
+
+* http://localhost:8080/actuator/info
+```html
+{
+"git":{
+    "branch":"main",
+    "commit":{
+    "id":"754bc78",
+    "time":"2023-01-01T00:00:00Z"
+    }
+}
+...
+}
+```
+
+* git에 대해 더 자세한 정보 알고 싶을때 yml
+```yml
+management:
+    info:
+        git:
+            mode: "full"
+```
+
+#### 로거
+
+loggers 엔드포인트를 사용하면 로깅관련 정보를 확인, 로깅레벨변경이 가능하다.  
+
+* logger controller
+```java
+package hello.controller;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+@Slf4j
+@RestController
+public class LogController {
+@GetMapping("/log")
+public String log() {
+log.trace("trace log");
+log.debug("debug log");
+log.info("info log");
+log.warn("warn log");
+log.error("error log");
+return "ok";
+}
+}
+
+* yml
+```
+logging:
+level:
+hello.controller: debug
+```
+이런식으로 로깅래벨 변경가능한데 이렇게 해두고 엑츄에이터 접속해보면
+
+* http://localhost:8080/actuator/loggers/hello.controller
+```html
+{
+"configuredLevel": "DEBUG",
+"effectiveLevel": "DEBUG"
+}
+```
+내가 설정한 로깅레벨이 나온다.  
+
+* POST http://localhost:8080/actuator/loggers/hello.controller
+```json
+{
+"configuredLevel": "TRACE"
+}
+```
+이런식으로 post요청을 보내면 임시적으로 로깅레벨을 서버 재시작없이 바꿀 수 있다. 단 다시 시작하면 yml저장된데로 돌아옴  
+
+#### HTTP 요청 응답기록
+
+* config 등록
+```java
+@Bean
+public InMemoryHttpExchangeRepository httpExchangeRepository() {
+return new InMemoryHttpExchangeRepository();
+}
+```
+ http요청 내역을 확인하려면 빈을 하나 등록해야한다. 인메모리 구현체로 등록하는데 이는 10개까지만 http내역을 저장한다.  
+
+`http://localhost:8080/actuator/httpexchanges`요청해보면 지금까지 요청한 http내역을 볼 수 있다.  
+다만 실제 서비스에서는 핀포인트, zipkin같은거 추천  
+
+#### 보안
+
+엑츄에이터는 많은 정보를 제공하기때문에 내부방을 사용하거나 권한설정등 으로 외부접속을 막아야한다.  
+기본적으로 내부망에서만 사용하도록 하는것이 좋은거같다.  
+
+`management.server.port=9292` yml로 엑츄에이터 포트만 변경 (8080앱 서버는 그대로 작동함)  
+```
+management:
+endpoints:
+web:
+base-path: "/manage"
+```
+기본엔트포인트 변경법
+
+위의 방법으로 내부망에서는 개발자만 접속가능하게하거나 이러지 못할경우 서블릿필터, 인터셉터 시큐리티 등에서 권한으로 막아야한다.  
