@@ -9240,3 +9240,159 @@ base-path: "/manage"
 기본엔트포인트 변경법
 
 위의 방법으로 내부망에서는 개발자만 접속가능하게하거나 이러지 못할경우 서블릿필터, 인터셉터 시큐리티 등에서 권한으로 막아야한다.  
+
+---
+## 20240614
+### MSA환경 스웨거
+
+* gradle
+```java
+implementation 'org.springdoc:springdoc-openapi-starter-webflux-ui:2.1.0' //webflux의 경우
+implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.1.0' //mvc의 경우
+```
+기본적으로 의존성이 의존성만 등록해주면 사용가능하다.
+
+* msa쪽 yml
+```
+springdoc:
+  version: v1
+  packages-to-scan: org.lucycato
+  default-consumes-media-type: application/json;charset=UTF-8
+  default-produces-media-type: application/json;charset=UTF-8
+  swagger-ui:
+    path: swagger-ui.html            # Swagger UI 경로 => localhost:8081/swagger-ui.html
+    tags-sorter: alpha            # alpha: 알파벳 순 태그 정렬, method: HTTP Method 순 정렬
+    operations-sorter: alpha      # alpha: 알파벳 순 태그 정렬, method: HTTP Method 순 정렬
+    doc-expansion: none
+  api-docs:
+    path: /api-docs/json
+    groups:
+      enabled: true
+  cache:
+    disabled: true
+
+server:
+  forward-headers-strategy: FRAMEWORK
+```
+내용은 별거 없으나 `forward-headers-strategy: FRAMEWORK` 이부분이 중요하다.  
+게이트웨이 유레카를 거치면서 라우팅되면서 주소, 헤더내용이 바뀔수 있는데 위 값을 설정해줘서 원본 내용들을 헤더에 저장해서 적절하게 처리가능하게 해준다.  
+
+* swaggerconfig webflux,mvc 둘다 코드는 같다.
+```java
+@Configuration
+public class WebFluxSwaggerConfig {
+
+    @Bean
+    public OpenAPI openAPI(@Value("${springdoc.version}") String version) {
+        Info info = new Info()
+                .title("Lucycato Document")
+                .version(version)
+                .description("Lucycato 프로젝트의 API 명세서입니다.");
+
+        String jwtScheme = "jwtAuth";
+        SecurityRequirement securityRequirement = new SecurityRequirement().addList(jwtScheme);
+        Components components = new Components()
+                .addSecuritySchemes(jwtScheme, new SecurityScheme()
+                        .name(jwtScheme)
+                        .type(Type.HTTP)
+                        .scheme("bearer")
+                        .bearerFormat("JWT"));
+
+        return new OpenAPI()
+                .components(components)
+                .info(info)
+                .addSecurityItem(securityRequirement)
+                .components(components);
+    }
+
+    @Bean
+    public OperationCustomizer customizeOperation() {
+        return (operation, handlerMethod) -> {
+            operation.addParametersItem(new io.swagger.v3.oas.models.parameters.Parameter()
+                    .name("Authorization")
+                    .in(SecurityScheme.In.HEADER.toString())
+                    .required(false)
+                    .description("Authorization Header")
+                    .schema(new io.swagger.v3.oas.models.media.StringSchema()));
+            operation.addParametersItem(new io.swagger.v3.oas.models.parameters.Parameter()
+                    .name("X-Lucycato-E-Commerce-Admin_Or_App_Member_Json_String")
+                    .in(SecurityScheme.In.HEADER.toString())
+                    .required(false)
+                    .description("X-Header")
+                    .schema(new io.swagger.v3.oas.models.media.StringSchema()));
+            return operation;
+        };
+    }
+}
+```
+스웨거 사용시 인증인가 코드 설정과 커스텀 헤더값을 설정해줄 수 있다. 기타 문서내용도 편집가능하다.  
+
+* 게이트웨이서버 yml
+```yml
+springdoc:
+  enable-native-support: true
+  version: v1
+  packages-to-scan: org.lucycato
+  default-consumes-media-type: application/json;charset=UTF-8
+  default-produces-media-type: application/json;charset=UTF-8
+  swagger-ui:
+    path: swagger-ui.html            # Swagger UI 경로 => localhost:8081/swagger-ui.html
+    tags-sorter: alpha            # alpha: 알파벳 순 태그 정렬, method: HTTP Method 순 정렬
+    operations-sorter: alpha      # alpha: 알파벳 순 태그 정렬, method: HTTP Method 순 정렬
+    doc-expansion: none
+    urls[0]:
+      name: user-auth-command 서비스
+      url: http://localhost:9090/user-auth-command/api-docs/json
+    urls[1]:
+      name: user-auth-query 서비스
+      url: http://localhost:9090/user-auth-query/api-docs/json
+    urls[2]:
+      name: notification-command 서비스
+      url: http://localhost:9090/notification-command/api-docs/json
+    urls[3]:
+      name: notification-query 서비스
+      url: http://localhost:9090/notification-query/api-docs/json
+    urls[4]:
+      name: product-command 서비스
+      url: http://localhost:9090/product-command/api-docs/json
+    urls[5]:
+      name: product-query 서비스
+      url: http://localhost:9090/product-query/api-docs/json
+    urls[6]:
+      name: board-command 서비스
+      url: http://localhost:9090/board-command/api-docs/json
+    urls[7]:
+      name: board-query 서비스
+      url: http://localhost:9090/board-query/api-docs/json
+    urls[8]:
+      name: event-command 서비스
+      url: http://localhost:9090/event-command/api-docs/json
+    urls[9]:
+      name: event-query 서비스
+      url: http://localhost:9090/event-query/api-docs/json
+    urls[10]:
+      name: order-command 서비스
+      url: http://localhost:9090/order-command/api-docs/json
+    urls[11]:
+      name: order-query 서비스
+      url: http://localhost:9090/order-query/api-docs/json
+
+
+  api-docs:
+    enabled: true
+    path: /api-docs/json
+  cache:
+    disabled: true
+```
+게이트웨이쪽 서버는 내용이 조금 다른데 스웨거에 접속할때 외부 통신가능한 서버에서 내부의 다른 서비스 스웨거정보를 가지고와서 보여주는 방식으로 게이트웨이 서버 이외에는 외부로 서버를 노출하지 않기 위해 다른 방식을 써야한다.  
+
+각 서버의 api데이터 json파일을 가져와서 게이트웨이 서버에서 여러개를 볼 수 있도록 설정한다.  
+게이트웨이 서버에서 각 서버로 접속가능한 주소와 api docs에 설정 한 `path: /api-docs/json`주소를 넣어주면 각서버에서 api 정보 json을 받을 수 있다.  
+이를 위와같이 등록해주면 된다.  
+
+![스크린샷 2024-06-13 162728](https://github.com/299unknown/diary/assets/151738362/d007f47a-a10b-485e-a177-e9c0af7a8788)  
+
+이런식으로  뒷단의msa서버에서 가져올 수 있다.  
+
+이런 라이브러리를 쓸때 디버깅도 잘안되고 버전문제도 있고 msa로 넘어오면서 정보도 많이 없어서 보이는 결과보다 상당히 오래 애를 먹었다.  
+서버별로 아직 문제가 있는 부분도 있지만 기본적으로 작동 잘 되는거같아 작업하면서 조금씩 고치면될거같다.  
