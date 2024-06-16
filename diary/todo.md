@@ -9480,3 +9480,105 @@ public class Main {
 ```
 어려운 문제는 아니였다. 다만 `parseStringToListOfIntegerLists`이런 변환함수 gpt이용했는데 이걸 암기해서 할수있어야하는지 참 그게 애매하다.  
 
+---
+## 20240616
+### 마이크로미터 메트릭확인
+모니터링 툴을 사용하고싶을때 우리는 서버의 정보들을 모니터링툴에게 전달해줘야한다. 그런데 툴마다 그 방식이 쪼금 씩 다르다. 이를 추상화해서 공통 템플릿으로 전달해주는것이 마이크로미터 이다. 마이크로미터는 다양한 모니터링툴을 지원한다.  
+
+엑츄에이터를 사용하면 기본적으로 사용가능하다. `http://localhost:8080/actuator/metrics`이주소로 접속가능  
+
+* 접속시
+```html
+{
+ "names": [
+ "application.ready.time",
+ "application.started.time",
+ "disk.free",
+ "disk.total",
+ "hikaricp.connections",
+ "hikaricp.connections.acquire",
+ "hikaricp.connections.active",
+ "hikaricp.connections.idle",
+ "hikaricp.connections.max",
+ "hikaricp.connections.usage",
+ "http.server.requests",
+ "http.server.requests.active",
+ "jdbc.connections.active",
+ "jdbc.connections.idle",
+ "jdbc.connections.max",
+ "jdbc.connections.min",
+ "jvm.buffer.count",
+ "jvm.buffer.memory.used",
+ "jvm.memory.used",
+ "jvm.memory.max",
+ "logback.events",
+ "process.cpu.usage",
+ "process.uptime",
+ "system.cpu.count",
+ "system.cpu.usage",
+ "tomcat.sessions.active.current",
+ "tomcat.sessions.rejected"
+ ]
+}
+
+```
+이런 다양한 기능을 제공한다. 
+
+예를 들어 `http://localhost:8080/actuator/metrics/jvm.memory.used`이런곳에 접속하면
+
+* 접속결과
+```html
+{
+ "name": "jvm.memory.used",
+ "description": "The amount of used memory",
+ "baseUnit": "bytes",
+ "measurements": [
+ {
+ "statistic": "VALUE",
+ "value": 131172848
+ }
+ ],
+ "availableTags": [
+ {
+ "tag": "area",
+ "values": [
+ "heap",
+ "nonheap"
+ ]
+ },
+ {
+ "tag": "id",
+ "values": [
+ "G1 Survivor Space",
+ "Compressed Class Space",
+ "Metaspace",
+ "CodeCache",
+ "G1 Old Gen",
+ "G1 Eden Space"
+ ]
+ }
+ ]
+}
+```
+현제 메모리 사용양을 알 수 있다.  
+
+아래에 보면 teg정보가 있는데 이를 확인하고  
+`http://localhost:8080/actuator/metrics/jvm.memory.used?tag=area:heap`  
+`http://localhost:8080/actuator/metrics/jvm.memory.used?tag=area:nonheap`  
+이런식으로 메모리를 힙인 부분과 아닌부분 나눠서 확인할 수 있는등의 세부정보도 확인가능하다.  
+
+많은 정보를 확인할 수 있는 가운데 톰캣관련 정보는 추가 셋팅을 해주면 더 상세한 정보를 볼 수 있다.
+
+* yml
+```java
+server:
+ tomcat:
+ mbeanregistry:
+ enabled: true
+```
+이를 추가해주면 톰캣의 최대 쓰레드, 사용 쓰레드 수를 포함한 다양한 메트릭을 확인할 수 있다  
+
+이외에 내가 제작한 서비스에 대한 메트릭도 따로 만들어줄 수 있는데 이는 강의 마지막에 확인  
+
+지금 이런정보들은 실시간 상황, 직접 들어가서 확인해야하는 불편함이 있어서 결국 지속적으로 데이터를 저장하고 시각적으로 보여줄 녀석이 필요하다. 그것이 프로메테우스와 그라파나이다.  
+
