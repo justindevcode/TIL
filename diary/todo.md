@@ -9582,3 +9582,76 @@ server:
 
 지금 이런정보들은 실시간 상황, 직접 들어가서 확인해야하는 불편함이 있어서 결국 지속적으로 데이터를 저장하고 시각적으로 보여줄 녀석이 필요하다. 그것이 프로메테우스와 그라파나이다.  
 
+---
+## 20240617
+### msa프로젝트 에러처리 공통 모듈에서 하기  
+
+지금 프로젝트에서 모든 에러처리는 MVC모듈 ,webflux모듈에서 모두 잡아서 처리하고 있는데 일단 잡은건 500에러를 내보내기 때문에 바꿔줄건 바꿔줘야한다.  
+
+```
+jakarta.validation.UnexpectedTypeException: HV000030: No validator could be found for constraint 'jakarta.validation.constraints.NotBlank' validating type 'java.lang.Long'. Check configuration for 'lectureId'
+
+2024-06-15T05:42:52.298815475Z 	at org.lucycato.common.SelfValidating.validateSelf(SelfValidating.java:21) ~[common-1.0.0-plain.jar!/:na]
+```
+예시로 일부러 에러뜨게 만들어봤는데 이런식으로 command단에서 NotBlank때문에 검증오류가 났다.
+
+```
+{
+  "result": {
+    "code": "LC-0001",
+    "reason": "internal server error",
+    "frontMessage": ""
+  },
+  "body": {}
+}
+```
+하지만 실제로 api를 사용해보면 무조건 500번 에러가난다.
+
+```java
+@Order(Integer.MAX_VALUE)
+@RestControllerAdvice
+@Slf4j
+public class WebMvcGlobalExceptionHandler {
+
+    @ExceptionHandler(value = Exception.class)
+    public ResponseEntity<ErrorResponse<Object>> handlerGlobalException(Exception ex) {
+        // TODO: Refactoring
+        ex.printStackTrace();
+
+        return ResponseEntity
+                .status(ErrorCodeImpl.INTERNAL_SERVER.getHttpCode())
+                .body(ErrorResponse.ERROR(ErrorCodeImpl.INTERNAL_SERVER));
+    }
+}
+```
+지금 mvc쪽에서 사용하는 ExceptionHandler인데 이를 수정해준다.
+
+```java
+@Order(Integer.MAX_VALUE)
+@RestControllerAdvice
+@Slf4j
+public class WebMvcGlobalExceptionHandler {
+
+    @ExceptionHandler(value = Exception.class)
+    public ResponseEntity<ErrorResponse<Object>> handlerGlobalException(Exception ex) {
+
+        //추가코드
+        if (ex instanceof UnexpectedTypeException) {
+            log.error("command Validation: {}", ex);
+            return ResponseEntity
+                    .status(ErrorCodeImpl.VALIDATION.getHttpCode())
+                    .body(ErrorResponse.ERROR(ErrorCodeImpl.VALIDATION));
+        }
+
+        // TODO: Refactoring
+        ex.printStackTrace();
+
+        return ResponseEntity
+                .status(ErrorCodeImpl.INTERNAL_SERVER.getHttpCode())
+                .body(ErrorResponse.ERROR(ErrorCodeImpl.INTERNAL_SERVER));
+    }
+}
+```
+if문으로 위의 터미널에서 `UnexpectedTypeException`에러를 확인한후 잡아서 로그를 찍어주고 커스텀되어있는 `ErrorCodeImpl`쪽에서 적정한 예외를 리턴하면된다.
+
+
