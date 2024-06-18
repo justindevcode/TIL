@@ -9654,4 +9654,118 @@ public class WebMvcGlobalExceptionHandler {
 ```
 if문으로 위의 터미널에서 `UnexpectedTypeException`에러를 확인한후 잡아서 로그를 찍어주고 커스텀되어있는 `ErrorCodeImpl`쪽에서 적정한 예외를 리턴하면된다.
 
+---
+## 20240618
+### 프로메테우스
+
+#### 프로메테우스, 그라파나 간단 소개
+프로메테우스 - 메트릭 지속저장 DB (간단 시각화)  
+그라파나 - 메트릭 DB이용 전문 시각화툴
+
+#### 프로메테우스 설치 설정
+
+설치는 doc이나 인터넷 참고 설치후 프로젝트 설정
+
+`implementation 'io.micrometer:micrometer-registry-prometheus'`  
+엑츄에이터에서 프로메테우스용 메트릭을 생성할수있도록 의존성 추가  
+
+`http://localhost:8080/actuator/prometheus` 들어가보면  
+```
+# HELP tomcat_threads_config_max_threads
+# TYPE tomcat_threads_config_max_threads gauge
+tomcat_threads_config_max_threads{name="http-nio-8080",} 200.0
+# HELP tomcat_sessions_alive_max_seconds
+# TYPE tomcat_sessions_alive_max_seconds gauge
+tomcat_sessions_alive_max_seconds 0.0
+# HELP tomcat_cache_access_total
+# TYPE tomcat_cache_access_total counter
+tomcat_cache_access_total 0.0
+# HELP jvm_info JVM version info
+# TYPE jvm_info gauge
+jvm_info{runtime="OpenJDK Runtime Environment",vendor="JetBrains
+s.r.o.",version="17.0.3+7-b469.37",} 1.0
+# HELP logback_events_total Number of events that made it to the logs
+# TYPE logback_events_total counter
+logback_events_total{level="warn",} 0.0
+logback_events_total{level="debug",} 0.0
+logback_events_total{level="error",} 2.0
+logback_events_total{level="trace",} 0.0
+logback_events_total{level="info",} 47.0
+...
+```
+조금 형식이 다르고 디테일한걸 확인가능 `_`등  
+
+그리고 프로메테우스 자체의 설정을 해야함 우리 서버에서 데이터 가져갈 수 있도록  
+
+* prometheus.yml
+```yml
+global:
+ scrape_interval: 15s
+ evaluation_interval: 15s
+alerting:
+ alertmanagers:
+ - static_configs:
+ - targets:
+ # - alertmanager:9093
+rule_files:
+scrape_configs:
+ - job_name: "prometheus"
+ static_configs:
+ - targets: ["localhost:9090"]
+ #추가
+ - job_name: "spring-actuator"
+ metrics_path: '/actuator/prometheus'
+ scrape_interval: 1s
+ static_configs:
+ - targets: ['localhost:8080']
+```
+프로메테우스 설치한 파일 내부에 yml 이런게 있을것임 거기에 우리서버 추가  
+
+`http://localhost:9090/config`  
+`http://localhost:9090/targets`  
+이런 프로메테우스 서버에 들어가서 적용됐는지 확인가능  
+
+검책창에 `http_server_requests_seconds_count`이런 정보 조회가능  
+
+![image](https://github.com/299unknown/diary/assets/151738362/3cf0a60f-e37d-486e-94a2-6c3382d1c905)  
+
+태그, 레이블: error , exception , instance , job , method , outcome , status , uri 는 각각의 메트릭 정보를 구분해서 사용하기 위한 태그이다. 마이크로미터에서는 이것을 태그(Tag)라 하고, 프로메테우스에서는 레이블(Label)이라 한다.  
+
+#### 필터
+
+레이블을 기준으로 필터를 사용할 수 있다. 필터는 중괄호( {} ) 문법을 사용한다.  
+
+= 제공된 문자열과 정확히 동일한 레이블 선택  
+!= 제공된 문자열과 같지 않은 레이블 선택  
+=~ 제공된 문자열과 정규식 일치하는 레이블 선택  
+!~ 제공된 문자열과 정규식 일치하지 않는 레이블 선택  
+
+method 가 GET , POST 인 경우를 포함해서 필터  
+http_server_requests_seconds_count{method=~"GET|POST"}  
+/actuator 로 시작하는 uri 는 제외한 조건으로 필터  
+http_server_requests_seconds_count{uri!~"/actuator.*"}  
+
+기타 내용은 문서확인  
+
+#### 게이지와 카운터  
+
+* 게이지 - 오르고 내리는값 (ex cpu사용률)
+* 카운더 - 계속 더해가는값 (ex api 호출카운트)
+
+게이지의 경우는 그냥 있는값을 시간순서데로 표시하면 보기편한 그래프가 나온다.  
+![image](https://github.com/299unknown/diary/assets/151738362/900e063b-40c1-4384-a571-90ea55924358)  
+
+카운터는 그냥 사용하면  
+![image](https://github.com/299unknown/diary/assets/151738362/f16264f4-227f-4ef7-a057-47e9bd239cec)  
+
+이런 상승그래프만 나오기에 어디서 얼마나 급격한 요청이 있었는지 알기 어렵다 그래서 함수를 추가로 사용한다  
+
+increase() 를 사용하면 이런 문제를 해결할 수 있다. 지정한 시간 단위별로 증가를 확인할 수 있다.  
+마지막에 [시간] 을 사용해서 범위 벡터를 선택해야 한다  
+
+`increase(http_server_requests_seconds_count{uri="/log"}[1m])`  
+
+![image](https://github.com/299unknown/diary/assets/151738362/fedd8268-0a0b-4f46-8651-46b29346ad2c)  
+
+이외에도 `rate()`, `irate()`등 여러 함수를 사용해서 조절가능하다 자세한 내용은 자료참고  
 
