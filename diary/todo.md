@@ -9727,7 +9727,7 @@ scrape_configs:
 
 검책창에 `http_server_requests_seconds_count`이런 정보 조회가능  
 
-![](https://github.com/299unknown/diary/assets/151738362/3cf0a60f-e37d-486e-94a2-6c3382d1c905)  
+![](5)  
 
 태그, 레이블: error , exception , instance , job , method , outcome , status , uri 는 각각의 메트릭 정보를 구분해서 사용하기 위한 태그이다. 마이크로미터에서는 이것을 태그(Tag)라 하고, 프로메테우스에서는 레이블(Label)이라 한다.  
 
@@ -9753,10 +9753,10 @@ http_server_requests_seconds_count{uri!~"/actuator.*"}
 * 카운더 - 계속 더해가는값 (ex api 호출카운트)
 
 게이지의 경우는 그냥 있는값을 시간순서데로 표시하면 보기편한 그래프가 나온다.  
-![](https://github.com/299unknown/diary/assets/151738362/900e063b-40c1-4384-a571-90ea55924358)  
+![](h58)  
 
 카운터는 그냥 사용하면  
-![](https://github.com/299unknown/diary/assets/151738362/f16264f4-227f-4ef7-a057-47e9bd239cec)  
+![](hc)  
 
 이런 상승그래프만 나오기에 어디서 얼마나 급격한 요청이 있었는지 알기 어렵다 그래서 함수를 추가로 사용한다  
 
@@ -9765,7 +9765,7 @@ increase() 를 사용하면 이런 문제를 해결할 수 있다. 지정한 시
 
 `increase(http_server_requests_seconds_count{uri="/log"}[1m])`  
 
-![](https://github.com/299unknown/diary/assets/151738362/fedd8268-0a0b-4f46-8651-46b29346ad2c)  
+![](c)  
 
 이외에도 `rate()`, `irate()`등 여러 함수를 사용해서 조절가능하다 자세한 내용은 자료참고  
 
