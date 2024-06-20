@@ -9788,3 +9788,72 @@ gui이기 때문에 그냥 사용법 영상으로 대강 확인하는게 좋음
 그냥 가져다 쓰면됨 다만 `Spring Boot 2.1 System Monitor`여기서 톰캣쓰레드관련 대시보드는 추가수정해서 넣어주면 더 편하다고 함  
 
 아무튼 프로메테우스 문법들 기반으로 그냥 보여주는것 
+
+---
+## 20240620
+### 그라파나 이용해서 간단히 문제상황 예시
+
+#### cpu
+
+* cpu급증 예시코드
+```java
+@Slf4j
+@RestController
+public class TrafficController {
+ @GetMapping("/cpu")
+ public String cpu() {
+ log.info("cpu");
+ long value =0;
+ for (long i = 0; i < 100000000000L; i++) {
+ value++;
+ }
+ return "ok value=" + value;
+ }
+}
+```
+
+결과 - 그라파나 cpu 급증확인
+
+#### JVM 메모리 사용량 초과
+
+* 예시코드
+```java
+private List<String> list = new ArrayList<>();
+@GetMapping("/jvm")
+public String jvm() {
+ log.info("jvm");
+ for (int i = 0; i < 1000000; i++) {
+ list.add("hello jvm!" + i);
+ }
+ return "ok";
+}
+```
+결과 - 메모리 꽉찬것 확인가능
+
+#### 커넥션 풀 고갈
+
+* 에시코드 커넥션풀 반납안함
+```java
+@Autowired DataSource dataSource;
+@GetMapping("/jdbc")
+public String jdbc() throws SQLException {
+ log.info("jdbc");
+ Connection conn = dataSource.getConnection();
+ log.info("connection info={}", conn);
+ //conn.close(); //커넥션을 닫지 않는다.
+ return "ok";
+}
+```
+결과 - 10개 이상 요청시 대기상테 생기고 30초 넘으면 실패로 끝남
+
+#### 에러 로그 급증
+
+* 예시코드
+```java
+@GetMapping("/error-log")
+public String errorLog() {
+ log.error("error log");
+ return "error";
+}
+```
+결과 - 에러로그 급증 확인
