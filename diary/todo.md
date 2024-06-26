@@ -1,6 +1,49 @@
 # todo
 
 ---
+## 20240626
+### sql 5월 식품들의 총매출 조회하기 4단계
+
+FOOD_PRODUCT와 FOOD_ORDER 테이블에서 생산일자가 2022년 5월인 식품들의 식품 ID, 식품 이름, 총매출을 조회하는 SQL문을 작성해주세요. 이때 결과는 총매출을 기준으로 내림차순 정렬해주시고 총매출이 같다면 식품 ID를 기준으로 오름차순 정렬해주세요.  
+
+* FOOD_PRODUCT
+
+|Column name|	Type|	Nullable|
+|---|---|---
+|PRODUCT_ID|	VARCHAR(10)|	FALSE|
+|PRODUCT_NAME|	VARCHAR(50)|	FALSE|
+|PRODUCT_CD|	VARCHAR(10)|	TRUE|
+|CATEGORY|	VARCHAR(10)|	TRUE|
+|PRICE|	NUMBER|	TRUE|
+
+* FOOD_ORDER
+
+|Column name|	Type|	Nullable|
+|---|---|---|
+|ORDER_ID|	VARCHAR(10)|	FALSE|
+|PRODUCT_ID|	VARCHAR(5)|	FALSE|
+|AMOUNT| NUMBER|	FALSE|
+|PRODUCE_DATE|	DATE|	TRUE|
+|IN_DATE|	DATE|	TRUE|
+|OUT_DATE|	DATE|	TRUE|
+|FACTORY_ID|	VARCHAR(10)|	FALSE|
+|WAREHOUSE_ID|	VARCHAR(10)|	FALSE|
+
+```
+SELECT fp.PRODUCT_ID, fp.PRODUCT_NAME, fo.amount * fp.PRICE AS TOTAL_SALES
+FROM FOOD_PRODUCT AS fp
+LEFT JOIN (
+    SELECT PRODUCT_ID, SUM(AMOUNT) AS amount 
+    FROM FOOD_ORDER 
+    WHERE DATE_FORMAT(PRODUCE_DATE, '%Y-%m') = '2022-05'
+    GROUP BY PRODUCT_ID
+) AS fo ON fp.PRODUCT_ID = fo.PRODUCT_ID
+HAVING TOTAL_SALES IS NOT NULL
+ORDER BY TOTAL_SALES DESC, fp.PRODUCT_ID;
+```
+감은 잡겠는데 암기해서 작성하지는 못하겠다... 상세한 문법이 조금 헷갈린다.
+
+---
 ## 20240625
 ### 레디스 실사용
 
