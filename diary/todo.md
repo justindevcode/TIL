@@ -1,6 +1,250 @@
 # todo
 
 ---
+# 20240716
+# 메트릭등록 @Counted, Timer
+## @Counted
+
+이전의 방식은 비즈니스 로직 함수에 직접 코드를 쓰면서 유지보수가 힘들어진다. 근데 보면 AOP로 해결하면 딱 좋을거같은데  
+역시 이 AOP를 미리 만들어준것이 있다 그걸 적용하면 된다.  
+
+```java
+package hello.order.v2;
+import hello.order.OrderService;
+import io.micrometer.core.annotation.Counted;
+import lombok.extern.slf4j.Slf4j;
+import java.util.concurrent.atomic.AtomicInteger;
+@Slf4j
+public class OrderServiceV2 implements OrderService {
+ private AtomicInteger stock = new AtomicInteger(100);
+ @Counted("my.order")
+ @Override
+ public void order() {
+ log.info("주문");
+ stock.decrementAndGet();
+ }
+ @Counted("my.order")
+ @Override
+ public void cancel() {
+ log.info("취소");
+ stock.incrementAndGet();
+ }
+ @Override
+ public AtomicInteger getStock() {
+ return stock;
+ }
+}
+```
+함수명 위에 ` @Counted("my.order")`이것만 올려주면 클레스명, 함수명으로 각각의 태그도 만들어준다.  
+
+```java
+@Configuration
+public class OrderConfigV2 {
+ @Bean
+ public OrderService orderService() {
+ return new OrderServiceV2();
+ }
+ @Bean
+ public CountedAspect countedAspect(MeterRegistry registry) {
+ return new CountedAspect(registry);
+ }
+}
+```
+다만 aop클레스도 꼭 bean으로 추가 등록해줘야한다.  
+
+```html
+{
+ "name": "my.order",
+ "measurements": [
+ {
+ "statistic": "COUNT",
+ "value": 5
+ }
+ ],
+ "availableTags": [
+ {
+ "tag": "result",
+ "values": [
+ "success"
+ ]
+ },
+ {
+ "tag": "exception",
+ "values": [
+ "none"
+ ]
+ },
+ {
+ "tag": "method",
+ "values": [
+ "cancel",
+ "order"
+ ]
+ },
+ {
+ "tag": "class",
+ "values": [
+ "hello.order.v2.OrderServiceV2"
+ ]
+ }
+ ]
+}
+```
+액츄에이터에 보면 클레스명과 함수명으로 추가된것을 볼 수 있다.  
+
+## Timer
+timer는 시간을 측정하는데 사용된다.  
+seconds_count : 누적 실행 수 - 카운터  
+seconds_sum : 실행 시간의 합 - sum  
+seconds_max : 최대 실행 시간(가장 오래걸린 실행 시간) - 게이지(내부에서 1~3분마다 새로운 최대값으로 갱신해줌)  
+
+이 3가지를 한번에 해준다.  
+
+```java
+@Slf4j
+public class OrderServiceV3 implements OrderService {
+ private final MeterRegistry registry;
+ private AtomicInteger stock = new AtomicInteger(100);
+ public OrderServiceV3(MeterRegistry registry) {
+ this.registry = registry;
+ }
+ @Override
+ public void order() {
+ Timer timer = Timer.builder("my.order")
+ .tag("class", this.getClass().getName())
+ .tag("method", "order")
+ .description("order")
+ .register(registry);
+ timer.record(() -> {
+ log.info("주문");
+ stock.decrementAndGet();
+ sleep(500);
+ });
+ }
+ @Override
+ public void cancel() {
+ Timer timer = Timer.builder("my.order")
+ .tag("class", this.getClass().getName())
+ .tag("method", "cancel")
+ .description("order")
+ .register(registry);
+ timer.record(() -> {
+ log.info("취소");
+ stock.incrementAndGet();
+ sleep(200);
+ });
+ }
+ private static void sleep(int l) {
+ try {
+ Thread.sleep(l + new Random().nextInt(200));
+ } catch (InterruptedException e) {
+ throw new RuntimeException(e);
+ }
+ }
+ @Override
+ public AtomicInteger getStock() {
+ return stock;
+ }
+}
+```
+Timer.builder(name) 를 통해서 타이머를 생성한다. name 에는 메트릭 이름을 지정한다.  
+tag 를 사용했는데, 프로메테우스에서 필터할 수 있는 레이블로 사용된다.  
+주문과 취소는 메트릭 이름은 같고 tag 를 통해서 구분하도록 했다.  
+register(registry) : 만든 타이머를 MeterRegistry 에 등록한다. 이렇게 등록해야 실제 동작한다.  
+타이머를 사용할 때는 timer.record() 를 사용하면 된다. 그 안에 시간을 측정할 내용을 함수로 포함하면 된다.  
+
+```java
+@Configuration
+public class OrderConfigV3 {
+ @Bean
+ OrderService orderService(MeterRegistry registry) {
+ return new OrderServiceV3(registry);
+ }
+}
+```
+설정파일  
+
+* 액츄에이터
+```html
+{
+ "name": "my.order",
+ "description": "order",
+ "baseUnit": "seconds",
+ "measurements": [
+ {
+ "statistic": "COUNT",
+ "value": 5
+ },
+ {
+ "statistic": "TOTAL_TIME",
+ "value": 1.929075042
+ },
+ {
+ "statistic": "MAX",
+ "value": 0.509926375
+ }
+ ],
+ "availableTags": [
+ {
+ "tag": "method",
+ "values": [
+ "cancel",
+ "order"
+ ]
+ },
+ {
+ "tag": "class",
+ "values": [
+ "hello.order.v3.OrderServiceV3"
+ ]
+ }
+ ]
+}
+```
+measurements 항목을 보면 COUNT , TOTAL_TIME , MAX 이렇게 총 3가지 측정 항목을 확인할 수 있다.  
+COUNT : 누적 실행 수(카운터와 같다)  
+TOTAL_TIME : 실행 시간의 합(각각의 실행 시간의 누적 합이다)  
+MAX : 최대 실행 시간(가장 오래 걸린 실행시간이다)  
+
+* 프로메테우스 포멧 메트릭 확인
+```
+# HELP my_order_seconds order
+# TYPE my_order_seconds summary
+my_order_seconds_count{class="hello.order.v3.OrderServiceV3",method="order",}
+3.0
+my_order_seconds_sum{class="hello.order.v3.OrderServiceV3",method="order",}
+1.518434959
+my_order_seconds_count{class="hello.order.v3.OrderServiceV3",method="cancel",}
+2.0
+my_order_seconds_sum{class="hello.order.v3.OrderServiceV3",method="cancel",}
+0.410640083
+# HELP my_order_seconds_max order
+# TYPE my_order_seconds_max gauge
+my_order_seconds_max{class="hello.order.v3.OrderServiceV3",method="order",}
+0.509926375
+my_order_seconds_max{class="hello.order.v3.OrderServiceV3",method="cancel",}
+0.20532925
+```
+프로메테우스로 다음 접두사가 붙으면서 3가지 메트릭을 제공한다.  
+seconds_count : 누적 실행 수  
+seconds_sum : 실행 시간의 합  
+seconds_max : 최대 실행 시간(가장 오래걸린 실행 시간), 프로메테우스 gague(1~3분마다 갱신)  
+
+번외 평균시간 구하기 seconds_sum / seconds_count = 평균 실행시간  
+
+* 그라파나 등록
+
+주문수 V3  
+increase(my_order_seconds_count{method="order"}[1m])  
+increase(my_order_seconds_count{method="cancel"}[1m])  
+
+최대시간  
+my_order_seconds_max  
+
+평균실행시간  
+increase(my_order_seconds_sum[1m]) / increase(my_order_seconds_count[1m])  
+
+---
 ## 20240626
 ### sql 5월 식품들의 총매출 조회하기 4단계
 
