@@ -1,6 +1,162 @@
 # todo
 
 ---
+# 20240730
+# 모니터링 메트릭 마무리, 실무팁, 마무리
+## 메트릭등록 @Timed
+
+어노테이션 활용하면 그냥 함수들 알아서 구해줌
+```java
+@Timed("my.order")
+@Slf4j
+public class OrderServiceV4 implements OrderService {
+ private AtomicInteger stock = new AtomicInteger(100);
+ @Override
+ public void order() {
+ log.info("주문");
+ stock.decrementAndGet();
+ sleep(500);
+ }
+ @Override
+ public void cancel() {
+ log.info("취소");
+ stock.incrementAndGet();
+ sleep(200);
+ }
+ private static void sleep(int l) {
+ try {
+ Thread.sleep(l + new Random().nextInt(200));
+ } catch (InterruptedException e) {
+ throw new RuntimeException(e);
+ }
+ }
+ @Override
+ public AtomicInteger getStock() {
+ return stock;
+ }
+}
+```
+@Timed("my.order") 타입이나 메서드 중에 적용할 수 있다. 타입에 적용하면 해당 타입의 모든 public 메서드에 타이머가 적용된다.  
+
+* config
+```java
+@Configuration
+public class OrderConfigV4 {
+ @Bean
+ OrderService orderService() {
+ return new OrderServiceV4();
+ }
+ @Bean
+ public TimedAspect timedAspect(MeterRegistry registry) {
+ return new TimedAspect(registry);
+ }
+}
+```
+TimedAspect 를 적용해야 @Timed 에 AOP가 적용된다.  
+
+이렇게하면 엑츄에이터 프로메테우스 그라파나 모두 자동등록이되고 사용가능하다  
+
+## 게이지 
+
+오르고 내릴 수 있는 값들 
+
+* 단순 등록 config에서 한번에
+```java
+@Configuration
+public class StockConfigV1 {
+ @Bean
+ public MyStockMetric myStockMetric(OrderService orderService, MeterRegistry
+registry) {
+ return new MyStockMetric(orderService, registry);
+ }
+ @Slf4j
+ static class MyStockMetric {
+ private OrderService orderService;
+ private MeterRegistry registry;
+ public MyStockMetric(OrderService orderService, MeterRegistry registry)
+{
+ this.orderService = orderService;
+ this.registry = registry;
+ }
+ @PostConstruct
+ public void init() {
+ Gauge.builder("my.stock", orderService, service -> {
+ log.info("stock gauge call");
+ return service.getStock().get();
+ }).register(registry);
+ }
+ }
+}
+```
+my.stock 이라는 이름으로 게이지를 등록했다.  
+게이지를 만들 때 함수를 전달했는데, 이 함수는 외부에서 메트릭을 확인할 때 마다 호출된다. 이 함수의 반환 값이 게이지의 값이다.  
+
+* 엑츄에이터 확인
+```html
+
+ "name": "my.stock",
+ "measurements": [
+ {
+ "statistic": "VALUE",
+ "value": 100
+ }
+ ],
+ "availableTags": []
+}
+```
+이런식으로 등록된다.  
+
+* 좀더 단순하게 등록하기 config
+```java
+@Slf4j
+@Configuration
+public class StockConfigV2 {
+ @Bean
+ public MeterBinder stockSize(OrderService orderService) {
+ return registry -> Gauge.builder("my.stock", orderService, service -> {
+ log.info("stock gauge call");
+ return service.getStock().get();
+ }).register(registry);
+ }
+}
+```
+
+## 실무환경 구성 팁들
+### 모니터링 3단계
+
+* 대시보드
+마이트로미터 프로메테우스 크라파나
+전체적인 시각화, 시스템메트릭 cpu, 애플리케이션 메트릭 DB커넥션 호출수등, 비즈니스 메트릭 주문수, 취소수등
+
+* 애플리케이션 추적
+핀포인트(오픈소스), 스카우트(오픈소스), 와탭(상용), 제니퍼(상용)
+핀포인트 추천
+
+주로 각각의 HTTP 요청을 추적, 일부는 마이크로서비스 환경에서 분산 추적  
+
+어떤 요청이 시간이 오래걸린지 확인하며 어떻게 msa서버들을 돌아다니고 sql이 어떻게 날라가고 한번에 확인가능  
+문제해결에 가장 직접적인 도움  
+
+* 로그
+가장 자세한 추적 원하는데로 커스텀
+다만 엄청난 로그들이 섞일건데 예전 강의에서 http요청마다 고유 id사용해서 묶을 수 있는 방법 미리 제공해주는것 있음 MDC 찾아서 적용해보기
+
+파일로 로그 남길경우  
+일반 로그와 에러 로그는 파일을 구분해서 남기자 에러 로그만 확인해서 문제를 바로 정리할 수 있음  
+
+클라우드쓰면 검색 잘되도록 구분하기  
+
+### 알람
+모니터링 툴에서 일정 이상 수치가 넘어가면, 슬랙, 문자 등을 연동  
+* 알람은 꼭 2가지로 구분해서 사용하자
+
+경고, 심각  
+경고는 하루 1번 정도 사람이 직접 확인해도 되는 수준(사람이 들어가서 확인)  
+심각은 즉시 확인해야 함, 슬랙 알림(앱을 통해 알림을 받도록), 문자, 전화  
+
+알람중에 이건 없애도 될거같은데.. 하는거 찾으면 바로바로 삭제해주자, 그러지않을경우 쓸모없는 알람이 쌓이면서 팀전체가 알림 확인 안하게되는 상황 생길 수 있음  
+
+---
 # 20240729
 # MSA란
 
