@@ -1,6 +1,64 @@
 # todo
 
 ---
+# 20240819
+# Config 깃허브 리포지토리
+
+![1](https://github.com/user-attachments/assets/a5928dc2-cb35-47c6-a720-a1be3aca4140)  
+
+## Config 저장소의 종류
+Config Server는 데이터를 전달하는 매개체 역할만 수행하고 실제 설정 정보를 담을 영속성의 경우 DB, 파일, Git Service를 사용한다.  
+
+### Config 영속성의 종류
+* Git Service
+* RDB
+* Document NoSQL
+* Redis
+* File
+* Vault
+* 등등..
+
+여러 영속성 도구 중 Git Service를 가장 많이 사용한다.  
+
+## 깃허브 리포지토리 생성
+리포지토리는 비공개로 생성 (개인 계정, Organization 모두 가능)  
+
+## 설정 파일 생성
+생성한 비공개 리포지토리 내부에 Config Server가 읽어갈 설정 파일을 생성하자.  
+이때 파일 명의 경우 아래와 같은 규칙이 필수적이다.  
+`이름-환경.properties`, `이름-환경.yml`  
+파일명은 대시(-)로 되어 있는 구분자를 필수로 넣어야 한다. 이름은 사용자가 식별할 수 있는 이름을 사용하고 환경은 dev, prod 와 같은 특정한 환경을 명시하면 된다.  
+
+## 리포지토리 외부 접속을 위한 비대칭 키 생성
+리포지토리를 외부에서 접속할 수 있도록 비대칭 키를 생성하며 public키를 깃허브 리포지토리에 등록해야 한다.  
+이때 쉘 환경에서 ssh-keygen 명령어를 통해 비대칭키를 생성해야 한다.  
+
+* 맥의 경우 터미널
+* 윈도우의 경우 git bash
+
+```
+#!/bin/bash
+
+ssh-keygen -m PEM -t rsa -b 4096 -C "코멘트(계정명 넣어도 됨)"
+```
+
+생성이 완료되면 /사용자/.ssh 경로에 생성 됨  
+```
+cd ~/.ssh
+```
+생성된 비대칭 키 중 public 키 내용을 복사하여 깃허브 리포지토리에 등록  
+
+## Public 키 등록
+
+생성한 리포지토리 - Settings - Depoly keys - Add Depoly key  
+
+---
+# 스프링에서 msa
+
+## 참조
+https://www.youtube.com/watch?v=VoonWkCJxcQ&list=PLJkjrxxiBSFBPk-6huuqcjiOal1KdU88R&index=2  
+
+---
 # 20240730
 # 모니터링 메트릭 마무리, 실무팁, 마무리
 ## 메트릭등록 @Timed
