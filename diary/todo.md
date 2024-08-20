@@ -1,6 +1,150 @@
 # todo
 
 ---
+# 20240820
+# config server, config client
+
+![1](https://github.com/user-attachments/assets/fe1744d2-a4d2-4aa6-b464-e76cf9cfc85a)  
+
+## Config 저장소 주소와 접속 private 키 준비
+* 리포지토리 주소 : SSH
+![1](https://github.com/user-attachments/assets/8b451732-532a-435e-9fd1-1d4545d40d34)
+
+
+* 비대칭키 중 private 키 내용 가져오기
+
+## 프로젝트 생성과 의존성 추가
+
+* 필수 의존성
+* Config Server
+* Spring Security
+
+## Main 클래스 어노테이션 등록
+`@EnableConfigServer`  
+
+## Config 저장소 연결
+application.properties 파일을 통해 Config 저장소를 연결한다.  
+
+```
+server.port=9000
+
+spring.cloud.config.server.git.uri=주소
+spring.cloud.config.server.git.ignoreLocalSshSettings=true
+spring.cloud.config.server.git.private-key=비밀키내용
+```
+
+## Config 서버 시큐리티 설정
+기본적으로 Config Client와 Config Server간 통신시 내부망을 사용하지만 추가적인 보안을 위해 HttpBasic 보안 설정을 권장한다. 따라서 Security Config 설정을 통해 모든 경로에 대해서 HttpBasic 보안 설정을 진행한다.  
+
+* Security Config 클래스 생성
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public BCryptPasswordEncoder bCryptPasswordEncoder() {
+
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+        http
+                .csrf((auth) -> auth.disable());
+
+        http
+                .authorizeHttpRequests((auth) -> auth.anyRequest().authenticated());
+
+        http
+                .httpBasic(Customizer.withDefaults());
+
+
+        return http.build();
+    }
+
+    @Bean
+    public UserDetailsService userDetailsService() {
+
+        UserDetails user1 = User.builder()
+                .username("아이디")
+                .password(bCryptPasswordEncoder().encode("비밀번호"))
+                .roles("ADMIN")
+                .build();
+
+
+        return new InMemoryUserDetailsManager(user1);
+    }
+}
+```
+복잡한 유저정보가 필요한게 아니기에 접속 유저 아이디 비번 인메모리로 직접 하나 추가
+
+## 접근 주소
+설정 정보 데이터를 얻기 위해 Config Client가 Config Server에 접근하는 주소는 아래와 같다.  
+
+`http://ip:port/저장소이름/저장소환경`  
+
+IP와 포트는 Config Server의 값을 입력해주지만 저장소이름과 저장소환경 경로는 Config Repository에 해당하는 깃허브 리포지토리 내부 파일 명을 넣어야 한다.  
+이때 파일명에 대한 주소 변환은 아래와 같다.  
+
+```
+이름-환경.properties
+이름-환경.yml
+
+/이름/환경
+```
+
+## 참고자료
+https://www.youtube.com/watch?v=qeQPBImEGec  
+
+## Config 클라이언트란
+단순하게 서비스 로직을 수행하는 스프링 부트 어플리케이션이다.  
+스프링 부트 어플리케이션에 Config Client 설정을 통해 Config Server에서 보내주는 데이터를 받을 수 있다.  
+
+## 프로젝트에 클라이언트 의존성 추가
+* 필수 의존성
+* Config Client
+
+```
+ext {
+  set('springCloudVersion', "2022.0.4")
+}
+
+dependencies {
+  implementation 'org.springframework.cloud:spring-cloud-starter-config'
+}
+
+dependencyManagement {
+  imports {
+    mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+  }
+}
+```
+스프링스타터에서도 Config Client찾아서 미리보기하면 그레들에 `ext` `dependencyManagement`이런거 새로 추가되어있다. 기존 프로젝트에 Config Client 추가하려면 이런거도 찾아서 복붙해줘야한다.  
+
+## Config 서버와 연결
+application.properties 파일을 통해 Config 서버에 연결 가능  
+
+```
+spring.application.name=이름
+spring.profiles.active=환경
+spring.config.import=optional:configserver:http://아이디:비밀번호@아이피:포트
+```
+이렇게 등록해주면 내가 택한 폴더의 환경변수파일을 그데로 사용한다.  
+
+## 서버로 부터 데이터 받기
+
+* application.properties
+```
+server.portname=${server.port}
+```
+그대로 사용하지 않고 새로운 환경변수명에 데이터담으려면 위와같이 사용하면 포트정보가 server.portname에 저장된다.
+
+## 참고
+https://www.youtube.com/watch?v=EQ31GAYxqSk  
+
+---
 # 20240819
 # Config 깃허브 리포지토리
 
