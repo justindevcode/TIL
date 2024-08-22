@@ -2,76 +2,117 @@
 
 ---
 # 20240822
-# Eureka 클라이언트 설정, 스프링 클라우드 게이트웨이 기초
-![1](https://github.com/user-attachments/assets/f149cca3-64cf-4962-8959-4e3d22fd05dc)  
+# JetBrains Space Config 리포지토리, Eureka 서버 구축
 
-## Eureka 클라이언트란
-MSA를 구성하는 요소들 중 Eureka 서버에서 모니터링 및 관리를 원하는 요소를 Eureka 클라이언트 설정을 진행해서 등록할 수 있다.  
+## JetBrains Space
+깃허브에 프라이빗 레포말고 다른 괜찮은 서비스 있어서 추천겸 정리  
+https://www.jetbrains.com/space/  
 
-## Eureka 클라이언트 설정을 위한 의존성 추가
-* 필수 의존성
-* Eureka Discovery Client
+JetBrains사가 제공하는 Space는 Git 서비스, CI/CD, 온라인 IDE, 이슈 트래킹, 채팅등을 지원하는 Developmtent 플랫폼이다.  
 
-* build.gradle
-```gradle
-ext {
-  set('springCloudVersion', "2022.0.4")
-}
+## Space Repository를 Config 서버 저장소로 사용하는 방법
+Space에도 Repository가 존재하는데 이 Repository를 Config 저장소로 사용할 수 있다.  
+연결 방법은 SSH와 비대칭키가 아닌, HTTPS와 Space의 계정 아이디, 비밀번호를 통해 연결을 진행할 수 있다.  
 
-dependencies {
+여기에는 따로 비대칭키 저장하는게 없어서 JetBrains 아이디 비밀번호로 설정한다.  
 
-  implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
-}
+따라서 스프링 Config 서버의 application.properteis 설정은 아래와 같이 진행하면 된다.  
 
-dependencyManagement {
-  imports {
-    mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
-  }
-}
 ```
-ext,dependencyManagement는 없으면 추가해줘야한다.  
-
-## 어노테이션 등록
-스프링 부트 메인 클래스에 Eureka 클라이언트로 동작하기 위한 어노테이션을 등록해야 한다.  
-`@EnableDiscoveryClient`  
-
-## Eureka 서버와 연결
-application.properties 변수 설정을 통해 Eureka 서버에 등록할 수 있다.  
-
-```properties
-server.port=8080
-spring.application.name=ms1
-
-
-eureka.client.register-with-eureka=true #유레카 서버에 등록할지 여부
-eureka.client.fetch-registry=true #유레카 서버의 정보를 가져올지 여부
-eureka.client.service-url.defaultZone=http://아이디:비밀번호@아이피:8761/eureka #유레카 서버 주소
+spring.cloud.config.server.git.uri=리포지토리HTTPS주소
+spring.cloud.config.server.git.username=아이디
+spring.cloud.config.server.git.password=비밀번호
 ```
 
 ## 참고
-https://www.youtube.com/watch?v=h1c3Rqt26kQ  
+https://www.youtube.com/watch?v=ujgz094STCc  
 
-## Spring Cloud Gateway란?
-스프링 클라우드 게이트웨이는 MSA 가장 앞단에서 클라이언트들로 부터 오는 요청을 받은 후 경로와 조건에 알맞은 마이크로서비스 로직에 요청을 전달하는 게이트웨이이다.  
-게이트웨이는 개념적으로는 아주 단순하지만 가장 앞단에서 무중지 상태로 모든 요청을 받아야하기 때문에 설정하기에 까다롭다.  
+## Eureka 서버 구축
+![1](https://github.com/user-attachments/assets/f149cca3-64cf-4962-8959-4e3d22fd05dc)  
 
-## Spring Cloud Gateway의 특성
-기존에 제작했던 스프링 부트, Eureka, Config와 같은 서비스들을 블로킹 기반으로 모두 톰캣 엔진을 사용했다.  
-하지만 게이트 웨이의 경우 비즈니스 로직 처리 보단 단순하게 지나가는 통로 즉, I/O 처리를 중점적으로 진행하기 때문에 논 블로킹 방식으로 동작하는 WebFlux와 네티엔진을 사용한다.  
-WebFlux는 기존에 스프링 부트에서 사용했던 JPA와 같은 블로킹 방식의 의존성들을 모두 사용하지 못하기 때문에 구현에 앞서 많은 학습이 필요하다.  
+## Eureka 서버의 역할
+Eureka 서버는 단순하게 MSA를 구성하는 마이크로 서비스들을 모니터링하는 감시자 서버의 역할을 한다고 볼 수 있지만.  
+깊게 보면 현재 존재하는 마이크로 서비스들을 Gateway에게 알려주어 시간과 부하에 따라 유동적으로 스케일 아웃되는 서버들을 모두 가용할 수 있도록 하는 역할을 수행한다.  
+따라서 Eureka 서버는 가동되는 서버를 확인 후 Gateway에게 그 목록을 알려주는 역할을 수행한다.  
 
 ## 프로젝트 생성과 의존성 추가
 * 필수 의존성
-* Gateway
+* Eureka Server
+* Spring Security
 
-## 게이트 웨이 설정 방식
-* 설정 파일 방식
-    * application.properties
-    * application.yml
-* 클래스 방식
+## Main 클래스 어노테이션 등록
+```java
+@SpringBootApplication
+@EnableEurekaServer
+public class EurekaServerApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(EurekaServerApplication.class, args);
+    }
+
+}
+```
+
+## Eureka 서버 설정
+application.properties 또느 application.yml 파일에 설정을 통해 Eureka 서버 생성을 진행할 수 있다.  
+
+```
+server.port=8761
+
+
+eureka.client.register-with-eureka=false
+eureka.client.fetch-registry=false
+```
+
+## 시큐리티 설정
+
+Eureka 서버는 내부망에서만 존재해야 된다. 하지만 외부망에 구축하거나 내부망에서도 보안을 중요시 해야하기 때문에 스프링 시큐리티 설정을 진행한다.  
+시큐리티는 httpBasic 방식 코드를 작성하면 된다  
+
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public BCryptPasswordEncoder bCryptPasswordEncoder() {
+
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+        http
+                .csrf((auth) -> auth.disable());
+
+        http
+                .authorizeHttpRequests((auth) -> auth.anyRequest().authenticated());
+
+        http
+                .httpBasic(Customizer.withDefaults());
+
+
+        return http.build();
+    }
+
+    @Bean
+    public UserDetailsService userDetailsService() {
+
+        UserDetails user1 = User.builder()
+                .username("아이디")
+                .password(bCryptPasswordEncoder().encode("비밀번호"))
+                .roles("ADMIN")
+                .build();
+
+
+        return new InMemoryUserDetailsManager(user1);
+    }
+}
+```
 
 ## 참고
-https://www.youtube.com/watch?v=AoPuwW2uz5s  
+https://www.youtube.com/watch?v=OXDwOYxKvWA&list=PLJkjrxxiBSFBPk-6huuqcjiOal1KdU88R&index=7  
 
 ---
 # 20240820
