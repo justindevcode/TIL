@@ -1,6 +1,79 @@
 # todo
 
 ---
+# 20240904
+# Eureka 클라이언트 설정, 스프링 클라우드 게이트웨이 기초
+![1](https://github.com/user-attachments/assets/f149cca3-64cf-4962-8959-4e3d22fd05dc)  
+
+## Eureka 클라이언트란
+MSA를 구성하는 요소들 중 Eureka 서버에서 모니터링 및 관리를 원하는 요소를 Eureka 클라이언트 설정을 진행해서 등록할 수 있다.  
+
+## Eureka 클라이언트 설정을 위한 의존성 추가
+* 필수 의존성
+* Eureka Discovery Client
+
+* build.gradle
+```gradle
+ext {
+  set('springCloudVersion', "2022.0.4")
+}
+
+dependencies {
+
+  implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+}
+
+dependencyManagement {
+  imports {
+    mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+  }
+}
+```
+ext,dependencyManagement는 없으면 추가해줘야한다.  
+
+## 어노테이션 등록
+스프링 부트 메인 클래스에 Eureka 클라이언트로 동작하기 위한 어노테이션을 등록해야 한다.  
+`@EnableDiscoveryClient`  
+
+## Eureka 서버와 연결
+application.properties 변수 설정을 통해 Eureka 서버에 등록할 수 있다.  
+
+```properties
+server.port=8080
+spring.application.name=ms1
+
+
+eureka.client.register-with-eureka=true #유레카 서버에 등록할지 여부
+eureka.client.fetch-registry=true #유레카 서버의 정보를 가져올지 여부
+eureka.client.service-url.defaultZone=http://아이디:비밀번호@아이피:8761/eureka #유레카 서버 주소
+```
+
+## 참고
+https://www.youtube.com/watch?v=h1c3Rqt26kQ  
+
+## Spring Cloud Gateway란?
+스프링 클라우드 게이트웨이는 MSA 가장 앞단에서 클라이언트들로 부터 오는 요청을 받은 후 경로와 조건에 알맞은 마이크로서비스 로직에 요청을 전달하는 게이트웨이이다.  
+게이트웨이는 개념적으로는 아주 단순하지만 가장 앞단에서 무중지 상태로 모든 요청을 받아야하기 때문에 설정하기에 까다롭다.  
+
+## Spring Cloud Gateway의 특성
+기존에 제작했던 스프링 부트, Eureka, Config와 같은 서비스들을 블로킹 기반으로 모두 톰캣 엔진을 사용했다.  
+하지만 게이트 웨이의 경우 비즈니스 로직 처리 보단 단순하게 지나가는 통로 즉, I/O 처리를 중점적으로 진행하기 때문에 논 블로킹 방식으로 동작하는 WebFlux와 네티엔진을 사용한다.  
+WebFlux는 기존에 스프링 부트에서 사용했던 JPA와 같은 블로킹 방식의 의존성들을 모두 사용하지 못하기 때문에 구현에 앞서 많은 학습이 필요하다.  
+
+## 프로젝트 생성과 의존성 추가
+* 필수 의존성
+* Gateway
+
+## 게이트 웨이 설정 방식
+* 설정 파일 방식
+    * application.properties
+    * application.yml
+* 클래스 방식
+
+## 참고
+https://www.youtube.com/watch?v=AoPuwW2uz5s  
+
+---
 # 20240822
 # JetBrains Space Config 리포지토리, Eureka 서버 구축
 
