@@ -1,6 +1,159 @@
 # todo
 
 ---
+# 20240905
+# 게이트웨이 라우팅 설정, Eureka로드벨런싱
+
+![1](https://github.com/user-attachments/assets/f149cca3-64cf-4962-8959-4e3d22fd05dc)  
+
+## 라우트 설정 조건들
+
+* 시간별로 서버 분할
+```
+spring:
+  cloud:
+    gateway:
+      routes:
+      - id: between_route
+        uri: https://example.org
+        predicates:
+        - Between=2017-01-20T17:42:47.789-07:00[America/Denver], 2017-01-21T17:42:47.789-07:00[America/Denver]  
+```
+
+* HTTP 헤더로 분할
+```
+spring:
+  cloud:
+    gateway:
+      routes:
+      - id: header_route
+        uri: https://example.org
+        predicates:
+        - Header=X-Request-Id, \d+
+```
+
+* HTTP 메소드로 분할
+```
+spring:
+  cloud:
+    gateway:
+      routes:
+      - id: method_route
+        uri: https://example.org
+        predicates:
+        - Method=GET,POST
+```
+
+등등 여러 방법이 있다 공식 페이지를 참조  
+https://cloud.spring.io/spring-cloud-gateway/reference/html/#gateway-request-predicates-factories  
+
+## application.properties를 통한 경로 설정
+
+```
+server.port=8080
+
+
+spring.cloud.gateway.routes[0].id=ms1
+spring.cloud.gateway.routes[0].predicates[0].name=Path
+spring.cloud.gateway.routes[0].predicates[0].args.pattern=/ms1/**
+spring.cloud.gateway.routes[0].uri=http://localhost:8081
+
+
+spring.cloud.gateway.routes[1].id=ms2
+spring.cloud.gateway.routes[1].predicates[0].name=Path
+spring.cloud.gateway.routes[1].predicates[0].args.pattern=/ms2/**
+spring.cloud.gateway.routes[1].uri=http://localhost:8082
+```
+
+## application.yml를 통한 경로 설정
+
+```
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: ms1
+          uri: http://localhost:8081
+          predicates:
+            - Path=/ms1/**
+        - id: ms2
+          uri: http://localhost:8082
+          predicates:
+            - Path=/ms2/**
+```
+
+## Config 클래스를 활용한 경로 설정
+
+```
+@Configuration
+public class RouteConfig {
+
+    @Bean
+    public RouteLocator ms1Route(RouteLocatorBuilder builder) {
+
+        return builder.routes()
+                .route("ms1", r -> r.path("/ms1/**")
+                        .uri("http://localhost:8081"))
+                .route("ms2", r -> r.path("/ms2/**")
+                        .uri("http://localhost:8082"))
+                .build();
+    }
+}
+```
+
+## 참조  
+https://www.youtube.com/watch?v=MAy3QTUS5VM&list=PLJkjrxxiBSFBPk-6huuqcjiOal1KdU88R&index=11  
+
+## 게이트웨이와 Eureka 서버 연동
+Eureka 서버는 각각의 비즈니스 로직 처리를 담당하는 스프링 부트 어플리케이션 목록들을 가지고 있다.  
+MSA를 구성하는 요소는 자동으로 오토 스케일링되기 때문에 새로 생긴 서버의 IP를 게이트웨이가 알지 못한다. 따라서 Eureka 서버가 해당 목록들을 관리하며 Gateway에게 전달한다.  
+
+## 스프링 클라우드 게이트웨이 Eureka 클라이언트 설정
+
+* build.gradle
+```
+ext {
+  set('springCloudVersion', "2022.0.4")
+}
+
+dependencies {
+  implementation 'org.springframework.cloud:spring-cloud-starter-netflix-eureka-client'
+}
+
+dependencyManagement {
+  imports {
+    mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+  }
+}
+```
+
+## application.properties 설정
+
+```
+eureka.client.register-with-eureka=true
+eureka.client.fetch-registry=true
+eureka.client.service-url.defaultZone=http://아이디:비밀번호@아이피:8761/eureka
+```
+
+## 게이트웨이 라우팅 유레카 로드 밸런싱
+
+* application.properties
+```
+spring.cloud.gateway.routes[0].id=ms1
+spring.cloud.gateway.routes[0].predicates[0].name=Path
+spring.cloud.gateway.routes[0].predicates[0].args.pattern=/ms1/**
+spring.cloud.gateway.routes[0].uri=lb://MS1
+```
+유레카로 등록할때 두개의 서버를 MS1의 이름으로 등록해두고 게이트웨이에서 `spring.cloud.gateway.routes[0].uri=lb://MS1` 이런식으로 적용하게되면  
+해당 주소로 요청이 들어갈때 자동으로 서버1 > 서버2 > 서버1 > 서버2 이렇게 돌아가면서 요청이 들어가게된다.  
+
+## 참조
+https://www.youtube.com/watch?v=bL7bakWi6Vg&list=PLJkjrxxiBSFBPk-6huuqcjiOal1KdU88R&index=12  
+
+---
 # 20240904
 # Eureka 클라이언트 설정, 스프링 클라우드 게이트웨이 기초
 ![1](https://github.com/user-attachments/assets/f149cca3-64cf-4962-8959-4e3d22fd05dc)  
