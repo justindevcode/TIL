@@ -1,6 +1,235 @@
 # todo
 
 ---
+# 20240911
+# 게이트웨이 라우터추가, 글로벌필터, 지역필터
+
+## 게이트웨이의 특성
+스프링 클라우드 게이트웨이는 퍼블릭 엔드포인트에서 게이트웨이 역할을 수행하기 때문에 서비스를 시작한 후 항상 가동 상태여야 한다.  
+
+## 라우팅의 추가와 삭제
+항상 가동 상태로 유지되어야 하는 게이트웨이 특성상 서버 스크립트를 중지 후 코드를 수정하고 재배포하면 서비스의 실시간성을 보장하지 못한다.  
+스프링 클라우드 게이트웨이의 경우 가동 중 새로운 비즈니스 로직(경로)이 추가될 경우 해당 주소에 대한 라우팅을 즉시 추가하고 삭제할 수 있는 여러 기능을 제공한다.  
+
+## Actuator
+Actuator는 스프링 어플리케이션의 기능을 엔드 포인트로 제공하는 의존성이다. 이 Actuator를 활용하여 가동중인 스프링 클라우드 게이트웨이에 새로운 라우팅을 추가하고 삭제할 수 있다.  
+
+## 프로젝트 생성과 의존성 추가
+* 필수 의존성
+* Gateway
+* Spring Boot Actuator
+
+필히 실제로 사용할때는 시큐리티를 추가해서 외부에서 Actuator 접근못하게 설정해야함  
+
+## Actuator 설정
+* application.properties
+```
+management.endpoint.gateway.enabled=true
+management.endpoints.web.exposure.include=gateway
+```
+게이트 웨이쪽 Actuator만 사용하도록 설정  
+
+## 라우팅 명령어
+우와 같이 세팅하면 외부에서 게이트웨이 쪽으로 http요청을 날려서 라우터를 추가하고 삭제할 수 있다.  
+
+* 존재하는 라우팅 확인
+`GET : /actuator/gateway/routes`
+
+* 라우터 추가
+`POST : /actuator/gateway/routes/{id}`
+
+POST Body에 JSON 타입으로 데이터를 추가해야 한다.  
+
+* 리프래시
+`POST : /actuator/gateway/refresh`
+추가 삭제후 꼭 이 api를 보내줘야 등록이 완료된다.
+
+* 라우트 제거
+`DELETE : /actuator/gateway/routes/{id}`
+
+* 특정 라우트 확인
+`GET : /actuator/gateway/routes/{id}`
+
+* 글로벌 필터 목록
+`GET : /actuator/gateway/globalfilters`
+
+* 특정 라우터 필터 목록
+`GET : /actuator/gateway/routefilters/{id}`
+
+## 라우팅 추가 실습
+
+* 현재 라우팅 목록 확인
+`GET : /actuator/gateway/routes`
+
+* 라우팅 추가
+`POST : /actuator/gateway/routes/{이름}`
+
+```
+{
+    "predicate": "Paths: [/ms1/**]",
+    "filters": [],
+    "uri": "http://localhost:8081",
+    "order": 0
+}
+```
+
+* 추가 후 refresh
+`POST : /actuator/gateway/refresh`
+
+## 참조
+https://www.youtube.com/watch?v=G2D3m8qhNiI&list=PLJkjrxxiBSFBPk-6huuqcjiOal1KdU88R&index=13  
+
+## 글로벌 필터
+
+![1](https://github.com/user-attachments/assets/b2c8d81c-c033-48c5-afe4-6aad2b5ecd9e)  
+
+스프링 클라우드 게이트웨이에서 글로벌 필터는 모든 라우팅에 대해서 적용되는 필터이다. 따라서 필터만 구현하면 특별한 설정 없이 적용된다.  
+클라이언트의 요청은 필터 → 마이크로서비스 → 필터 형태로 이동되며 같은 필터라도 마이크로서비스를 접근하기 이전이면 pre, 이후면 post라고 명명한다.  
+각각의 필터는 Order 값을 가질 수 있으며 pre 필터의 경우 Order 값이 작을수록 빠르게 동작하며, post 필터의 경우 Order 값이 작을수록 늦게 동작한다.  
+
+## 글로벌 필터 작성
+
+```java
+@Component
+public class G1Filter implements GlobalFilter, Ordered {
+
+
+    @Override
+    public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+
+        System.out.println("pre global filter order -1");
+
+        return chain.filter(exchange)
+                .then(Mono.fromRunnable(() -> {
+
+                    System.out.println("post global filter order -1");
+                }));
+    }
+
+    @Override
+    public int getOrder() {
+
+        return -1;
+    }
+}
+```
+-1 순서로 등록한것이고 `System.out.println("pre global filter order -1");`이 부분이 pre, 아래 `return`이후가 post 부분이다.  
+
+## Order 설정시
+각각의 마이크로서비스에 요청을 전달하는 라우팅 테이블이 Order 0으로 설정된 경우가 많기 때문에 필터의 경우 음수 설정이 지향된다.  
+
+## 참조
+https://www.baeldung.com/spring-cloud-custom-gateway-filters  
+https://www.youtube.com/watch?v=TgbUGQ-jO2I&list=PLJkjrxxiBSFBPk-6huuqcjiOal1KdU88R&index=14  
+
+## 지역 필터
+스프링 클라우드 게이트웨이에서 지역 필터는 특정 마이크로서비스 라우팅에 대해서만 동작을 진행하는 필터이다.  
+
+## 프로젝트 필수 의존성
+
+* Gateway
+* Lombok
+
+## 지역 필터 작성
+
+```java
+@Component
+public class L1Filter extends AbstractGatewayFilterFactory<L1Filter.Config> {
+
+    public L1Filter() {
+
+        super(Config.class);
+    }
+
+
+    @Override
+    public GatewayFilter apply(Config config) {
+
+        return (exchange, chain) -> {
+
+            if (config.isPre()) {
+                System.out.println("pre local filter 1");
+            }
+
+            return chain.filter(exchange)
+                    .then(Mono.fromRunnable(() -> {
+
+                        if (config.isPost()) {
+
+                            System.out.println("post local filter 1");
+                        }
+                    }));
+        };
+    }
+
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Data
+    public static class Config {
+        private boolean pre;
+        private boolean post;
+    }
+}
+```
+지역 필터의 경우 첫번째 `return`이 pre, 두번째 `return`이 post이다.  
+
+## 특정 라우팅에 지역 필터 등록  
+* application.properties
+```
+spring.cloud.gateway.routes[0].filters[0].name=L1Filter
+spring.cloud.gateway.routes[0].filters[0].args.pre=true
+spring.cloud.gateway.routes[0].filters[0].args.post=true
+```
+
+* appliction.yml
+```
+server:
+  port: 8080
+
+spring:
+  cloud:
+    gateway:
+      routes:
+        - id: ms1
+          uri: http://localhost:8081
+          predicates:
+            - Path=/ms1/**
+					filters:
+						- name: L1Filter
+							args:
+								pre: true
+								post: true
+        - id: ms2
+          uri: http://localhost:8082
+          predicates:
+            - Path=/ms2/**
+```
+
+* config 클래스
+```java
+@Configuration
+public class RouteConfig {
+
+    @Bean
+    public RouteLocator ms1Route(RouteLocatorBuilder builder) {
+
+        return builder.routes()
+                .route("ms1", r -> r.path("/ms1/**")
+												.filters(f -> f.filter(L1Filter.apply(new L1Filter.Config(true, true))))
+                        .uri("http://localhost:8081")
+								)
+                .route("ms2", r -> r.path("/ms2/**")
+                        .uri("http://localhost:8082")
+								)
+                .build();
+    }
+}
+```
+
+## 참조
+https://www.youtube.com/watch?v=Tg5_6XW61sQ&list=PLJkjrxxiBSFBPk-6huuqcjiOal1KdU88R&index=14  
+
+---
 # 20240905
 # 게이트웨이 라우팅 설정, Eureka로드벨런싱
 
