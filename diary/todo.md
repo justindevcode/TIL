@@ -1,6 +1,106 @@
 # todo
 
 ---
+# 20240912
+# Resilience4J 장애대응방법, 모듈
+
+## MSA 장애 상황과 대응
+MSA는 여러개의 마이크로 서비스가 서로 호출을 하며 하나의 시스템을 이룬다. 이때 각각의 MS는 무응답, 지연, 실패와 같은 상황을 발생할 수 있습니다.  
+위 상황이 발생할때 해당 부분 MS에 circuit을 open하여 일시적으로 다른 작업을 처리하도록하는 MSA 장애 대응을 진행해야 한다.  
+스프링 프레임워크 기반으로 MSA를 구축할때 위와 같이 서킷 방식의 장애 대응 솔루션을 제공하는 프레임워크는 Netflix Hystrix와 Resilience4J가 존재한다.  
+
+## Resilience4J
+Netflix Hystrix의 지원이 중단되면서 Spring Cloud에서 Hystrix를 계승한 Resilience4J 서킷 브레이크 프레임워크를 제공한다.  
+Resilience4J는 자바용 내결함성 라이브러리로 하나의 서비스에서 발생할 수 있는 장애 상황에서 그것을 대처할 수 있는 여러 솔루션을 제공한다.  
+
+공식사이트 : https://resilience4j.readme.io/  
+
+## 예시
+* 장애 상황이란?
+* 실패 : 요청 했는데 응답이 안옴 (health check로 금방 알 수 있음)
+* 지연 : 요청 했는데 평소보다 늦게 응답이 옴 (응답이 왔기 때문에 파악하기 힘듬)
+
+![1](https://github.com/user-attachments/assets/a826b3cd-9169-4603-aefd-673c9c14e637)  
+캐시 DB를 활용해서 효율적으로 쓰고있다가 이 서버와 문제가 생겨서 실패하거나 지연이 상당히 길어진다. 이렇게되면 이를 캐치해서 RDB쪽으로 연결을 open해서 사용하게 만들어 준다.  
+
+## 참고  
+https://www.youtube.com/watch?v=UpwJOImeYcA&list=PLJkjrxxiBSFCAvgvqYaIFlSWYCfa1x4TQ&index=1  
+
+## Resilience4J 제공 모듈
+
+공식문서 : https://docs.spring.io/spring-cloud-circuitbreaker/reference/index.html  
+
+* circuit-breaker : 회로 차단기
+	* 실패
+	* 지연
+* fall-back : 실패시 동작
+* retry : 자동 재시도
+* bulk-head : 동시 실행 제한
+* rate-limiter : 속도(성능) 제한
+* time-limiter : 시간 초과 제한
+* cache : 결과 캐싱
+
+## circuit-breaker
+Resilience4J의 핵심 모듈로 장애 또는 지연 상황에서 circuit을 일시적으로 오픈하는 기능을 제공한다.  
+
+서킷을 오픈하는 조건은 아래와 같다.   
+* 실패 : 호출 후 특정 비율 이상 실패
+* 지연 : 호출 후 특정 비율 이상 지연
+
+서킷은 아래와 같은 유한 상태를 가진다.  
+
+![1](https://github.com/user-attachments/assets/583c431c-aadd-410b-b08a-8d075e31f9cf)  
+
+(service2가 service1을 호출하는 상황이라고 가정하고)  
+
+![1](https://github.com/user-attachments/assets/fb0b5d11-c5ec-44a1-93ab-840cbfe3b3dd)  
+
+CLOSED : 평상시 상태  
+OPEN : 평상시 상태에서 사용자가 설정한 임계치 이상의 지연율 및 실패율이 달성되면 회로를 끊어버린 상태  
+HALP_OPEN : OPEN 상태에서 설정한 시간이 지난 후 HALF_OPEN 상태로 전환된다. HALF_OPEN 상태는 CLOSED 또는 OPEN 상태로 전환을 판단한다.  
+
+## fall-back
+circuit-breaker가 실패 또는 지연 상황 발생으로 circuit을 open 할 경우 대비책으로 동작할 메소드 설정.  
+
+## retry
+실패한 요청을 일정 시간 이후에 재시도하는 모듈.  
+
+## bulk-head
+병렬 실행 제한을 위한 모듈.  
+
+## rate-limiter
+마이크로 서비스 내부 실행 중 일정 비율 이상의 부하를 막기 위한 속도 제한 모듈.  
+
+## time-limiter
+마이크로 서비스 내부 실행 중 일정 시간 이상의 지연을 막기 위한 시간 제한 모듈.  
+
+## cache
+요청에 대한 결과 저장(캐싱)을 위한 모듈.  
+
+## 읽어보면 좋을 자료
+올리브영 테크블로그의 Circuitbreaker를 사용한 장애 전파 방지  
+https://oliveyoung.tech/blog/2023-08-31/circuitbreaker-inventory-squad/  
+
+![1](https://github.com/user-attachments/assets/73c3bd62-67f7-4e8d-8eb2-4377fb6671d6)  
+
+올리브영의 예시인데 많은 서비스가 이런식으로 구현되어있을 것이다. 레디스를 캐시로 사용하는 효율을 높이는 DB 사용법
+
+![2](https://github.com/user-attachments/assets/6dc65135-6d55-4816-b5b7-20bdc9a9a227)  
+
+다만 이 레디스도 문제가 생길 수 있다 연결이 끊긴다던지 어떠한 원인에 의해 그냥 RDB에서 찾는것보다 느리다던지  
+
+![3](https://github.com/user-attachments/assets/8c6938d4-889f-476b-b784-494525d7235b)  
+
+위 문제를 해결하기 위해서 Resilience4J를 사용할 수 있다 이를 앞단에 두어서 레디스에 문제가 생기면 바로 RDB쪽으로 우회해주는것이다.  
+
+G마켓 기술 블로그의 Fault Tolerance  
+https://dev.gmarket.com/86  
+
+## 참고
+https://www.youtube.com/watch?v=EL2XEh6l_Rc&list=PLJkjrxxiBSFCAvgvqYaIFlSWYCfa1x4TQ&index=3  
+
+
+---
 # 20240911
 # 게이트웨이 라우터추가, 글로벌필터, 지역필터
 
