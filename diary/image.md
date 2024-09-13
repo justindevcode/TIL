@@ -90,6 +90,8 @@
 ![2](https://github.com/user-attachments/assets/6dc65135-6d55-4816-b5b7-20bdc9a9a227)
 ![3](https://github.com/user-attachments/assets/8c6938d4-889f-476b-b784-494525d7235b)
 ![1](https://github.com/user-attachments/assets/00364782-afa9-4d1b-be5a-056f03521511)
+![스크린샷 2024-09-13 135856](https://github.com/user-attachments/assets/1127479f-abaf-489c-b568-68b87d84f0ff)
+![스크린샷 2024-09-13 135907](https://github.com/user-attachments/assets/365a95c4-bdd2-4cfb-b46d-cc269b879b12)
 
 
 
