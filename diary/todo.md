@@ -1,6 +1,157 @@
 # todo
 
 ---
+# 20240913
+# 프로젝트 Resilience4J사용서버, 호출서버 구축
+
+## resilience4j 서버
+
+## 버전
+스프링 부트 버전 : 3.2.0  
+언어 : Java  
+의존성 관리 도구 : gradle (groovy)  
+
+## 기본 모듈 : build.gradle
+spring web  
+lombok  
+resilience4j  
+
+```
+plugins {
+  id 'java'
+  id 'org.springframework.boot' version '3.2.0'
+  id 'io.spring.dependency-management' version '1.1.4'
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+  sourceCompatibility = '17'
+}
+
+configurations {
+  compileOnly {
+    extendsFrom annotationProcessor
+  }
+}
+
+repositories {
+  mavenCentral()
+}
+
+ext {
+  set('springCloudVersion', "2023.0.0")
+}
+
+dependencies {
+  implementation 'org.springframework.boot:spring-boot-starter-web'
+  implementation 'org.springframework.cloud:spring-cloud-starter-circuitbreaker-resilience4j'
+  compileOnly 'org.projectlombok:lombok'
+  annotationProcessor 'org.projectlombok:lombok'
+  testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+dependencyManagement {
+  imports {
+    mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+  }
+}
+
+tasks.named('test') {
+  useJUnitPlatform()
+}
+```
+
+추가 모듈 이것 추가해야 어노테이션 기반으로 resilience4j 사용가능  
+
+```
+dependencies {
+
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+
+    implementation 'io.github.resilience4j:resilience4j-all'
+}
+```
+
+## 컨트롤러
+
+```java
+@Controller
+@ResponseBody
+public class MainController {
+
+		private Rest1Comp rest1Comp;
+
+    @Autowired
+    public MainController(Rest1Comp rest1Comp) {
+
+        this.rest1Comp = rest1Comp;
+    }
+
+    @GetMapping("/")
+		public String mainP() {
+
+        return rest1Comp.restTemplate1().getForObject("/data", String.class);
+    }
+}
+```
+
+## RestTemplate 생성 : 다른 서비스 호출을 위한 API Client
+
+```java
+@Component
+public class Rest1Comp {
+
+    @Bean
+    public RestTemplate restTemplate1() {
+
+        return new RestTemplateBuilder().rootUri("http://localhost:9000")
+                .build();
+    }
+```
+
+## 호출서버
+
+Service1 API 서버 구축  
+Spring Boot 3.2.0  
+
+## DataController  
+
+```java
+@Controller
+@ResponseBody
+public class DataController {
+
+    @GetMapping("/data")
+    public String dataP() {
+
+        String nowTime = String.valueOf(LocalDateTime.now());
+
+        try {
+
+            Thread.sleep(10000);
+        } catch (InterruptedException e) {
+
+            throw new RuntimeException(e);
+        }
+
+        return nowTime;
+    }
+}
+```
+
+* application.properties
+`server.port=9000`
+
+이렇게 호출서버쪽에서 10초를 기다린후 응답이 넘어오도록 세팅했고  
+resilience4j 에서도 호출서버쪽의  api를 사용할수 있도록 셋팅완료 했다  
+
+## 참고
+https://www.youtube.com/watch?v=f7-t8o9NbFI&list=PLJkjrxxiBSFCAvgvqYaIFlSWYCfa1x4TQ&index=3  
+https://www.youtube.com/watch?v=mN8RtsKAaBI&list=PLJkjrxxiBSFCAvgvqYaIFlSWYCfa1x4TQ&index=5  
+
+---
 # 20240912
 # Resilience4J 장애대응방법, 모듈
 
