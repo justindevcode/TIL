@@ -1,6 +1,146 @@
 # todo
 
 ---
+# 20240914
+# Resilience4J 슬라이딩 윈도우, 서킷브레이커 구현
+
+## 슬라이딩 윈도우 기법  
+슬라이딩 윈도우 기법을 통해 지정해둔 사이즈의 슬라이딩 윈도우 터널을 생성하고 내부에서 실패 및 지연 개수를 측정한다.  
+![1](https://github.com/user-attachments/assets/00364782-afa9-4d1b-be5a-056f03521511)  
+
+## circuit breaker 구현 구조
+![1](https://github.com/user-attachments/assets/583c431c-aadd-410b-b08a-8d075e31f9cf)  
+Service2에서 Service1을 호출하는 상황에서 Service2에 circuit을 open할 Resilience4J의 circuit breaker를 구현하는 방법  
+
+## 특정 함수에 circuit breaker 패턴 적용
+마이크로서비스의 내부 로직 중 지연 또는 실패가 발생할 수 있는 Controller, Service단에 circuit breaker를 적용하여 해당 상황이 발생하였을때 대응할 수 있도록 구성한다.  
+
+사용할 함수에 circuit breaker 어노테이션 방식 적용  
+`@CircuitBreaker(name = "특정할이름", fallbackMethod = "실패시수행할메소드이름")`
+
+예시  
+```java
+@CircuitBreaker(name = "특정할이름", fallbackMethod = "실패시수행할메소드이름")
+@GetMapping("/")
+public String mainP() {
+
+    return rest1Comp.restTemplate1().getForObject("/data", String.class);
+}
+```
+
+## name에 대한 circuit breaker 설정
+circuit breaker를 적용할 특정 name 메소드에 대해 circuit breaker 설정을 적용하는 방법  
+
+* application.properties
+```
+resilience4j.circuitbreaker.instances.특정할이름.base-config=설정셋
+```
+
+## circuit breaker 설정
+application.properties에 circuit breaker 모듈이 제공하는 메소드 설정을 진행한다.  
+
+이때 특정한 이름에 대해서 변수 설정을 진행해 인스턴스 별로 다른 circuit breaker 패턴을 지정할 수 있다.  
+
+* 변수에 대한 특정한 이름 설정
+```
+resilience4j.circuitbreaker.configs.설정셋.메소드들=값
+
+#예시
+resilience4j.circuitbreaker.configs.default.failure-rate-threshold=10
+```
+
+* 슬라이딩 윈도우 공통 사항
+```
+#실패 및 지연을 체크할 슬라이딩 윈도우 타입 (개수 기반)
+resilience4j.circuitbreaker.configs.default.sliding-window-type=count_based
+
+
+#슬라이딩 윈도우 크기
+resilience4j.circuitbreaker.configs.default.sliding-window-size=5
+```
+
+* 실패에 대한 설정
+```
+#서킷을 오픈할 실패 비율 (실패 수 / 슬라이딩 윈도우 크기) (퍼센트)
+resilience4j.circuitbreaker.configs.default.failure-rate-threshold=10
+
+
+#서킷을 오픈하기 위해 최소 실패 수 (슬라이딩 윈도우를 다 채우지 못했지만 최소값을 설정 가능)
+resilience4j.circuitbreaker.configs.default.minimum-number-of-calls=5
+```
+
+* 지연에 대한 설정
+```
+#서킷을 오픈할 지연 비율 (지연 수 / 슬라이딩 윈도우 크기)
+resilience4j.circuitbreaker.configs.default.slow-call-rate-threshold=10
+
+
+#지연으로 판단할 시간
+resilience4j.circuitbreaker.configs.default.slow-call-duration-threshold=3000ms
+```
+
+* half open 상태 설정
+
+```
+#half open 상태에서 다른 상태로 전환하기 위한 판단 수
+resilience4j.circuitbreaker.configs.default.permitted-number-of-calls-in-half-open-state=10
+
+
+#half open 상태 유지 시간 (만약 0이면 위에서 설정한 값 만큼 수행 후 다음 상태로 전환)
+resilience4j.circuitbreaker.configs.default.max-wait-duration-in-half-open-state=0
+
+
+#open 상태에서 half open으로 전환까지 기다리는 시간
+resilience4j.circuitbreaker.configs.default.wait-duration-in-open-state=600000ms
+
+
+#open 상태에서 half open 으로 자동 전환 (true시 일정 시간이 지난 후 자동 전환)
+resilience4j.circuitbreaker.configs.default.automatic-transition-from-open-to-half-open-enabled=true
+
+
+#상태 체크 표시 (actuator용)
+resilience4j.circuitbreaker.configs.default.register-health-indicator=true
+```
+
+* 예외 처리 (아래 예외 또한 실패로 받아드리기 때문에 처리하지 않으면 실패수에 포함 됨)
+```
+resilience4j.circuitbreaker.configs.default.ignore-exceptions[0]=java.io.IOException
+resilience4j.circuitbreaker.configs.default.ignore-exceptions[1]=java.util.concurrent.TimeoutException
+resilience4j.circuitbreaker.configs.default.ignore-exceptions[2]=org.springframework.web.client.HttpServerErrorException
+```
+
+## fallback 메소드 설정
+
+```java
+@CircuitBreaker(name = "특정할이름", fallbackMethod = "실패시수행할메소드이름")
+@GetMapping("/")
+public String mainP() {
+
+    return rest1Comp.restTemplate1().getForObject("/data", String.class);
+}
+
+private String 실패시수행할메소드이름(Throwable throwable) {
+
+    return throwable.getMessage();
+}
+```
+
+fallback 메소드는 circuit breaker가 적용된 메소드가 가지는 인자를 필수적으로 가져야 합니다.  
+
+## 결과  
+
+![스크린샷 2024-09-13 135856](https://github.com/user-attachments/assets/1127479f-abaf-489c-b568-68b87d84f0ff)  
+
+일정 횟수 이상 실패하면 서킷이 오픈되도록 설정되어있으므로 첫 몇번의 실패는 그냥 요청실패 화면이 뜬다.  
+
+![스크린샷 2024-09-13 135907](https://github.com/user-attachments/assets/365a95c4-bdd2-4cfb-b46d-cc269b879b12)  
+일정 횟수 이상 실패하게 되면 서킷이 오픈되었다는 응답으로 바꿔서 오게된다.  
+
+## 참고  
+https://www.youtube.com/watch?v=vfDXRZqrzSs&list=PLJkjrxxiBSFCAvgvqYaIFlSWYCfa1x4TQ&index=5  
+https://www.youtube.com/watch?v=U28Q3kDwcg4&list=PLJkjrxxiBSFCAvgvqYaIFlSWYCfa1x4TQ&index=7  
+
+---
 # 20240913
 # 프로젝트 Resilience4J사용서버, 호출서버 구축
 
