@@ -1,6 +1,228 @@
 # todo
 
 ---
+# 20240930
+# Resilience4J retry, bulk head, actuator
+
+## retry
+Resilience4J의 retry 모듈은 실패한 요청을 재시도하는 기능을 가지고 있다.  
+retry의 기본적인 우선 순위는 circuit breaker가 실행된 이후 실행되기 때문에 fallbackmethod를 등록한 서킷의 경우 처리하지 않아야 하며 만약 fallbackmethod 동작전 retry를 실행시키고 싶은 경우 내부 config 설정을 통해 우선 순위(Order)를 변경하면 된다.  
+
+## 특정 함수에 retry 패턴 적용
+실패가 발생하고 그것을 필수적으로 재시도해야하는 Controller, Service단의 메소드 상단에 retry 어노테이션 선언을 통해 실패 상황을 재시도 할 수 있다.  
+
+* retry 어노테이션 방식 적용
+`@Retry(name = "특정할이름", fallbackMethod = "실패시수행할메소드이름")`
+
+* 예시
+```java
+@Retry(name = "MainControllerMethod1", fallbackMethod = "실패시수행할메소드이름")
+@GetMapping("/")
+public String mainP() {
+
+    return rest1Comp.restTemplate1().getForObject("/data", String.class);
+}
+```
+
+## name에 대한 retry 설정  
+retry를 적용할 특정 name 메소드에 대해 retry 설정을 적용하는 방법  
+
+* application.properties
+```
+resilience4j.retry.instances.특정할이름.base-config=설정셋
+```
+
+## retry 설정
+application.properties에 retry 모듈이 제공하는 메소드 설정을 진행한다.  
+이때 특정한 이름에 대해서 변수 설정을 진행해 인스턴스 별로 다른 retry 패턴을 지정할 수 있다.  
+
+* 변수에 대한 특정한 이름 설정
+```
+resilience4j.retry.configs.설정셋.메소드들=값
+
+#예시
+resilience4j.retry.configs.default.max-attempts=10
+```
+
+* 재요청 설정
+```
+#재요청 시도 횟수
+resilience4j.retry.configs.default.max-attempts=3
+
+
+#재요청 간격
+resilience4j.retry.configs.default.wait-duration=3000ms
+```
+
+* 예외 처리 (retry에 포함) (만약 ignore에도 포함되어 있는 경우 ignore 우선)
+```
+예외 처리 (retry에 포함) (만약 ignore에도 포함되어 있는 경우 ignore 우선)
+```
+
+* 예외 처리 (retry에 포함 안함)
+```
+resilience4j.retry.configs.default.ignore-exceptions[0]=java.io.IOException
+```
+
+## fallbackmethod 설정
+fallbackmethod는 설정한 재시도 최대 횟수가 초과된 이후 실행할 메소드로 어노테이션 인자를 통해 설정할 수 있다.  
+
+```java
+@Retry(name = "MainControllerMethod1", fallbackMethod = "실패시수행할메소드이름")
+@GetMapping("/")
+public String mainP() {
+
+    return rest1Comp.restTemplate1().getForObject("/data", String.class);
+}
+
+
+private String 실패시수행할메소드이름(Throwable throwable) {
+
+    return throwable.getMessage();
+}
+```
+유의할 점으로 실패시 수행할 메소드에 매개변수로 `Throwable throwable`는 필수이며 만약 기존 함수에 매개변수가 있다면 그거도 같이 넣어줘야한다.  
+위의 예시에서 ` mainP(String a, String b)` 이렇게 매개 변수가 있다면 `실패시수행할메소드이름(String a, String b, Throwable throwable)` 이렇게 써야한다.  
+
+## bulk head
+Resilience4J가 제공하는 bulk head 모듈은 동시 요청을 제한하는 기능을 가진다.  
+이때 bulk head 모듈은 두가지 타입을 제공하며 아래와 같다.  
+
+* bulkhead (semaphore)
+세마포어 알고리즘을 통해 공유 자원 접근을 제한하는 방식
+
+* thread-pool-bulkhead (fixed thread pool)
+고정된 사이즈의 스레드를 지정하는 방식
+
+하나의 메소드에 대해 위의 두 bulkhead 타입 중 하나를 선택하여 구현해야 한다.  
+
+## 각 타입이 존재하는 이유
+
+@Async 어노테이션이 선언된 비동기 메소드와 bulkhead(semaphore) 방식의 자원 제한을 사용할 경우 요청에 의해 생성된 스레드는 재사용되지 않고 계속적으로 증가하는 결과를 가진다고 합니다. (세마포어 카운터가 0이 되어도 새로운 스레드를 생성하기 때문에 bulk head 기능을 못 함)  
+따라서 비동기 메소드의 경우 해당 메소드에 대해 전체 스레드 개수를 제한하는 thread-pool-bulkhead 방식을 사용하는 것이 좋다고 합니다.  
+
+블로그 참고 : https://dev.to/gabrielaramburu/bulkhead-pattern-semaphore-vs-threadpool-226p  
+
+## 특정 함수에 bulk head 패턴 적용
+동시 요청 제한을 진행해야하는 메소드에  
+
+* bulkhead (semaphore) 방식
+```java
+@Bulkhead(name = "특정할이름", type = Bulkhead.Type.SEMAPHORE, fallbackMethod = "실패시수행할메소드이름")
+@GetMapping("/")
+public String mainP() {
+
+    return rest1Comp.restTemplate1().getForObject("/data", String.class);
+}
+```
+
+* thread-pool-bulkhead (fixed thread pool)
+```java
+@Bulkhead(name = "특정할이름", type = Bulkhead.Type.THREADPOOL, fallbackMethod = "실패시수행할메소드이름")
+@GetMapping("/")
+public String mainP() {
+
+    return rest1Comp.restTemplate1().getForObject("/data", String.class);
+}
+```
+
+## name에 대한 bulk head 설정
+application.properties에서 설정  
+
+* bulkhead (semaphore) 방식
+`resilience4j.bulkhead.instances.특정할이름.base-config=설정셋`
+
+* thread-pool-bulkhead (fixed thread pool)
+`resilience4j.thread-pool-bulkhead.instances.특정할이름.base-config=설정셋`
+
+## bulk head 설정
+
+application.properties에서 설정  
+
+* bulkhead (semaphore) 방식
+```
+#동시 요청 세마포어 카운터 수
+resilience4j.bulkhead.configs.default.max-concurrent-calls=1
+
+
+#동시 요청 초과시 웨이팅 시간 (초과되면 exception 발생)
+resilience4j.bulkhead.configs.deafult.max-wait-duration=1000ms
+```
+
+* thread-pool-bulkhead (fixed thread pool)
+```
+#최대 스레드 풀
+resilience4j.thread-pool-bulkhead.configs.defatul.max-thread-pool-size=10
+
+
+#기본 스레드 풀
+resilience4j.thread-pool-bulkhead.configs.default.core-thread-pool-size=5
+
+
+#스레드풀 초과시 요청이 기다릴 대기큐 크기
+resilience4j.thread-pool-bulkhead.configs.default.queue-capacity=50
+```
+
+## thread-pool-bulkhead 오류에 대한 GitHub Issue
+“errorThreadPool bulkhead is only applicable for completable futures”  
+토이프로젝트 수준에서 `thread-pool-bulkhead` 설정에서 오류가 있는데 이슈가 올라온게 있다. 실사용할때는 잘 찾아보고 사용하기  
+
+https://github.com/resilience4j/resilience4j/issues/826  
+
+## fallbackmethod
+```java
+@Bulkhead(name = "특정할이름", type = Bulkhead.Type.SEMAPHORE, fallbackMethod = "실패시수행할메소드이름")
+@GetMapping("/")
+public String mainP() {
+
+    return rest1Comp.restTemplate1().getForObject("/data", String.class);
+}
+
+private String 실패시수행할메소드이름(Throwable throwable) {
+
+    return throwable.getMessage();
+}
+```
+
+## actuator를 통한 Resilience4J 서킷 상태 확인
+Spring Boot Actuator를 통한 Resilience4J가 적용된 마이크로서비스의 서킷 상태를 확인할 수 있다.  
+
+## actuator 의존성 추가
+
+* build.gradle
+```
+dependencies {
+
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+}
+```
+
+## actuator 엔드포인트 활성화
+application.properties에서 설정을 진행한다.  
+
+* actuator 관련
+```
+management.endpoints.web.exposure.include=*
+management.endpoint.health.show-details=always
+management.health.circuitbreakers.enabled=true
+```
+
+* resilience4j circuit breaker 관련
+`resilience4j.circuitbreaker.configs.default.register-health-indicator=true`
+
+## actuator 엔드포인트
+`/actuator/health`  
+
+![스크린샷 2024-09-14 090020](https://github.com/user-attachments/assets/90c91a7a-da04-4e8c-9c42-5cb048891b67)  
+
+actuator를 등록하면 설정해둔 Resilience4J 상태를 확인할 수 있다.  
+
+## 참고
+https://www.youtube.com/watch?v=klfx8Xq-cq4&list=PLJkjrxxiBSFCAvgvqYaIFlSWYCfa1x4TQ&index=7  
+https://www.youtube.com/watch?v=11VlEZcvZ-g&list=PLJkjrxxiBSFCAvgvqYaIFlSWYCfa1x4TQ&index=9  
+https://www.youtube.com/watch?v=mQb6exPfnHk&list=PLJkjrxxiBSFCAvgvqYaIFlSWYCfa1x4TQ&index=10  
+
+---
 # 20240914
 # Resilience4J 슬라이딩 윈도우, 서킷브레이커 구현
 
