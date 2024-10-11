@@ -1,6 +1,160 @@
 # todo
 
 ---
+# 20241011
+# 스프링배치 프로젝트 생성, DB 연결
+
+## 의존성
+* Lombok
+* Spring Web
+* JDBC API
+* Spring Data JPA
+* MySQL Driver
+* Spring Batch
+
+* build.gradle
+```
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-batch'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    compileOnly 'org.projectlombok:lombok'
+    runtimeOnly 'com.mysql:mysql-connector-j'
+    annotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.batch:spring-batch-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+```
+
+## 배치 자동실행방지
+스프링 부트 및 스프링 배치는 1개의 배치 작업에 대해 프로젝트를 실행하면 자동으로 배치 작업이 가동되기 때문에 해당 과정을 막아야 한다.  
+
+* application.properties
+`spring.batch.job.enabled=false`
+
+## 스프링부트프로젝트 패키지 생성
+* batch (배치학습중이라 밖으로 뺌 원래는 config안으로)
+* config
+* controller
+* entity
+* repository
+* schedule
+
+## 2개의 데이터베이스를 연결
+2개의 데이터베이스를 통해 시리즈 진행 (단일 연결은 단순 변수 셋팅으로 정말 쉽지만, 자주 사용하는 경우가 없을거 같습니다.)  
+배치를 사용하면 대부분 두개의 데이터베이스를 사용하게됨  
+
+![1](https://github.com/user-attachments/assets/6d7a9b8f-5762-4be5-93e1-2522055efa89)  
+
+* 1 : 메타데이터용
+배치 작업의 진행 사항 및 내용에 대한 메타데이터를 기록하는 테이블을 위한 DB  
+
+* 2 : 데이터소스용
+배치 작업 데이터용 DB
+
+## 데이터베이스 연결 변수 작성
+* application.properties
+```
+spring.datasource-meta.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.datasource-meta.jdbc-url=jdbc:mysql://아이피:3306/첫번째디비명?useSSL=false&useUnicode=true&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true
+spring.datasource-meta.username=아이디
+spring.datasource-meta.password=비밀번호
+
+spring.datasource-data.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.datasource-data.jdbc-url=jdbc:mysql://아이피:3306/두번째디비명?useSSL=false&useUnicode=true&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true
+spring.datasource-data.username=아이디
+spring.datasource-data.password=비밀번호
+```
+
+스프링 부트는 하나의 데이터베이스에 대해서만 변수 방식으로 자동 연결을 진행하기 때문에 2개 등록시 등록을 진행하는 Config 클래스를 작성해야 합니다.  
+따라서 위 변수 값들을 기반으로 다음 영상에서 DB 연결 Config 클래스를 작성하도록 하겠습니다.  
+지금상태로 서버를 시작하면 오류가 나게됩니다.  
+
+스프링 부트에서 2개 이상의 DB를 연결하려면 Config 클래스를 필수적으로 작성해야 하며, 충돌을 방지하여 우선 순위를 위해 @Primary Config를 설정해야 합니다.  
+이때 스프링 배치의 기본적인 메타데이터는 @Primary로 잡혀 있는 DB 소스에 초기화되게 됩니다.  
+
+## MetaDBConfig : 첫 번째 DB
+* config > MetaDBConfig.java
+```java
+@Configuration
+public class MetaDBConfig {
+
+    @Primary
+    @Bean
+    @ConfigurationProperties(prefix = "spring.datasource-meta")
+    public DataSource metaDBSource() {
+
+        return DataSourceBuilder.create().build();
+    }
+
+    @Primary
+    @Bean
+    public PlatformTransactionManager metaTransactionManager() {
+
+        return new DataSourceTransactionManager(metaDBSource());
+    }
+}
+```
+`@Primary`로 설정할 내용들을 `prefix = "spring.datasource-meta"`로 가져와서 등록해줌
+
+## DataDBConfig : 두 번째 DB
+* config > DataDBConfig.java
+```java
+@Configuration
+@EnableJpaRepositories(
+        basePackages = "com.example.samplebatch.repository",
+        entityManagerFactoryRef = "dataEntityManager",
+        transactionManagerRef = "dataTransactionManager"
+)
+public class DataDBConfig {
+
+    @Bean
+    @ConfigurationProperties(prefix = "spring.datasource-data")
+    public DataSource dataDBSource() {
+
+        return DataSourceBuilder.create().build();
+    }
+
+    @Bean
+    public LocalContainerEntityManagerFactoryBean dataEntityManager() {
+
+        LocalContainerEntityManagerFactoryBean em = new LocalContainerEntityManagerFactoryBean();
+
+        em.setDataSource(dataDBSource());
+        em.setPackagesToScan(new String[]{"com.example.samplebatch.entity"});
+        em. setJpaVendorAdapter(new HibernateJpaVendorAdapter());
+
+        HashMap<String, Object> properties = new HashMap<>();
+        properties.put("hibernate.hbm2ddl.auto", "update");
+        properties.put("hibernate.show_sql", "true");
+        em.setJpaPropertyMap(properties);
+
+        return em;
+    }
+
+    @Bean
+    public PlatformTransactionManager dataTransactionManager() {
+
+        JpaTransactionManager transactionManager = new JpaTransactionManager();
+
+        transactionManager.setEntityManagerFactory(dataEntityManager().getObject());
+
+        return transactionManager;
+    }
+}
+```
+일반적으로 사용할 DB 내용들을 어떤 엔티티에 적용할지 `@EnableJpaRepositories`에 세부적으로 적어주고 `em`에 설정된 값을 등록  
+`properties.put("hibernate.hbm2ddl.auto", "update");`같은건 이렇게 2개의 DB를 사용할때는 properties 파일에 적어서 등록할수 없어서 따로 함수로 넣어줌  
+
+이렇게 셋팅후에는 정상적으로 서버가 기동가능하다.  
+
+## 참조
+https://www.youtube.com/watch?v=5jYhq28Vri4&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=3  
+https://www.youtube.com/watch?v=OfMM4BbBlpY&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=5  
+
+---
 # 20241010
 # 스프링배치 학습목표와 동작원리  
 
