@@ -1,6 +1,409 @@
 # todo
 
 ---
+# 20241015
+# 스프링배치 메타데이터 테이블, 처리1 테이블 TO 테이블
+
+## 메타데이터 테이블이란?
+배치에서 중요한 작업에 대한 트래킹을 수행하는 테이블로, 스프링 배치에서도 메타데이터를 관리해야 합니다.  
+보통은 DB 테이블에 저장하며, application.properties 변수 설정시 @Primary로 설정한 테이블에 테이블을 자동으로 생성할 수 있습니다.  
+
+## 메타데이터 테이블 생성 설정
+
+* application.properties
+```
+spring.batch.jdbc.initialize-schema=always
+spring.batch.jdbc.schema=classpath:org/springframework/batch/core/schema-mysql.sql
+```
+always를 설정하면 batch 설정에서 jdbc를 통해 테이블을 생성하며 생성 쿼리는 연결된 DB를 파악한 뒤 자동으로 찾지만, 혹시 찾지 못하거나 커스텀을 원하는 경우 classpath값을 부여할 수 있습니다.  
+
+## 테이블 ERD
+
+![1](https://github.com/user-attachments/assets/08b4942f-e2c0-40a1-8eba-cc887b24c655)  
+
+메타데이터 저장에 필요한 내용들을 사용 DB에 맞게 생성해줍니다. 상세한 내용은 공식문서 참고  
+https://docs.spring.io/spring-batch/reference/schema-appendix.html  
+
+## 테이블 스크립트 경로 확인하기
+External Libararies > Gradle: org.springframework.batch:spring-batch-core:버전 > org.springframework.batch.core  
+
+![1](https://github.com/user-attachments/assets/3e1a5ae1-fafa-4837-844a-0acebb3c9099)  
+
+## DB에서 생성된 테이블 확인
+
+![1](https://github.com/user-attachments/assets/44b2a9e5-072a-485c-ab3f-9fefbecc8a5b)  
+
+## 배치 처리1 : 테이블 to 테이블 기초 테이블 간 데이터 이동
+
+우리의 첫 번째 배치 작업은 간단하게 2개의 테이블을 정의하고 하나의 테이블에 있는 데이터 전부를 다른 테이블로 이동 시키는 일 입니다.  
+실제 프로덕션에서는 이렇게 사용할 일이 거의 없겠지만 배치를 이해하기위해 만들어 봅니다.  
+
+![1](https://github.com/user-attachments/assets/931a7a07-716f-49f6-89a7-dcafdf1a898b)  
+
+## 테이블1 : BeforeEntity
+
+* Entity 정의
+```java
+@Entity
+@Getter
+@Setter
+public class BeforeEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String username;
+}
+```
+
+* Repository 정의
+```java
+public interface BeforeRepository extends JpaRepository<BeforeEntity, Long> {
+
+}
+```
+
+## 테이블2 : AfterEntity
+
+* Entity 정의
+```java
+@Entity
+@Getter
+@Setter
+public class AfterEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String username;
+}
+```
+
+* Repository 정의
+```java
+public interface AfterRepository extends JpaRepository<AfterEntity, Long> {
+
+}
+```
+
+## 테이블1에 실습 데이터 넣기
+
+* sql : insert into BeforeEntity
+```sql
+INSERT INTO BeforeEntity (username) VALUES
+('Alice Johnson'),
+('Bob Smith'),
+('Charlie Brown'),
+('Diana Prince'),
+('Edward Davis'),
+('Fiona White'),
+('George Harris'),
+('Hannah Clark'),
+('Ian Walker'),
+('Jessica Lee'),
+('Kevin Robinson'),
+('Laura King'),
+('Michael Scott'),
+('Nina Evans'),
+('Oscar Wright'),
+('Pamela Adams'),
+('Quincy Green'),
+('Rachel Baker'),
+('Sam Harris'),
+('Tina Nelson'),
+('Ursula Moore'),
+('Victor Young'),
+('Wendy Thompson'),
+('Xander Garcia'),
+('Yara Martinez'),
+('Zachary Lewis'),
+('Amelia Jones'),
+('Benjamin Wilson'),
+('Clara Taylor'),
+('David Anderson'),
+('Emma Martinez'),
+('Frank Hernandez'),
+('Grace Robinson'),
+('Henry Walker'),
+('Ivy Young'),
+('Jack Scott'),
+('Katherine Lee'),
+('Liam Brown'),
+('Mia Harris'),
+('Noah King'),
+('Olivia Adams'),
+('Paul Nelson'),
+('Quinn Green'),
+('Riley White'),
+('Sophia Davis'),
+('Thomas Clark'),
+('Uma Evans'),
+('Vera Robinson'),
+('William Wright'),
+('Xena Baker'),
+('Yusuf Harris'),
+('Zoe Martinez'),
+('Aaron Scott'),
+('Bella Young'),
+('Carlos Robinson'),
+('Daisy Thompson'),
+('Ethan Moore'),
+('Faith Lewis'),
+('Gina Clark'),
+('Hank Green'),
+('Iris Martinez'),
+('James Taylor'),
+('Kelly Adams'),
+('Lucas King'),
+('Maggie White'),
+('Nathan Wilson'),
+('Opal Harris'),
+('Peter Scott'),
+('Queenie Davis'),
+('Ryan Baker'),
+('Sandra Green'),
+('Travis Johnson'),
+('Ulysses Clark'),
+('Vivian Martinez'),
+('Walter White'),
+('Xander Robinson'),
+('Yvette King'),
+('Zach Smith'),
+('Allison Davis'),
+('Bradley Moore'),
+('Chloe Harris'),
+('Daniel Green'),
+('Emily Taylor'),
+('Freddie Brown'),
+('Gabriella Wilson'),
+('Henry Scott'),
+('Isabella White'),
+('Jake Adams'),
+('Kaitlyn Robinson'),
+('Leo Clark'),
+('Madison King'),
+('Nina Brown'),
+('Owen Martinez'),
+('Peyton Harris'),
+('Quinton Moore'),
+('Rebecca White'),
+('Steve Wilson'),
+('Tara Scott'),
+('Ursula Green'),
+('Victor Harris'),
+('Wendy Adams'),
+('Xander King'),
+('Yvonne Davis'),
+('Zachary White');
+```
+테스트해볼 더미 데이터로 DB에 넣어주고 테스트 해봅니다.  
+
+## 스프링 배치 모식도
+![1](https://github.com/user-attachments/assets/097608b9-32bf-4784-b64b-7e0a7eca8c3c)  
+
+## 클래스 생성 및 Job 정의
+기본적으로 하나의 배치 Job을 정의할 클래스를 생성하고 Job 메소드를 등록해야 합니다.  
+이때 배치 작업시 사용할 Repository 의존성들도 필드에 주입을 받도록 하겠습니다.  
+
+```java
+ @Configuration
+public class FirstBatch {
+
+    private final JobRepository jobRepository;
+    private final PlatformTransactionManager platformTransactionManager;
+
+    private final BeforeRepository beforeRepository;
+    private final AfterRepository afterRepository;
+
+    public FirstBatch(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager, BeforeRepository beforeRepository, AfterRepository afterRepository) {
+
+        this.jobRepository = jobRepository;
+        this.platformTransactionManager = platformTransactionManager;
+        this.beforeRepository = beforeRepository;
+        this.afterRepository = afterRepository;
+    }
+
+    @Bean
+    public Job firstJob() {
+
+        System.out.println("first job");
+
+        return new JobBuilder("firstJob", jobRepository)
+                .start(스텝들어갈자리) //다음꺼 필요하면 .next()이런식으로 추가해서 넣어줄 수 있음
+                .build();
+    }
+}
+```
+
+## 순서 생각 및 Step 정의
+Job을 정의 했지만, 실제 배치 처리는 Job 아래에 존재하는 하나의 Step에서 수행되게 됩니다.  
+따라서 Step에서 "읽기 → 처리 → 쓰기" 과정을 구상해야 하며, Step을 등록하기 위한 @Bean을 등록하겠습니다.  
+
+```java
+@Bean
+public Step firstStep() {
+
+    System.out.println("first step");
+
+    return new StepBuilder("firstStep", jobRepository)
+            .<BeforeEntity, AfterEntity> chunk(10, platformTransactionManager)
+            .reader(읽는메소드자리)
+            .processor(처리메소드자리)
+            .writer(쓰기메소드자리)
+            .build();
+}
+```
+
+정의한 Step은 Job의 start() 메소드 내부에 firstStep()을 넣어주시면 됩니다.  
+
+* 청크 : chunk
+이때 읽기 → 처리 → 쓰기 작업은 청크 단위로 진행되는데, 대량의 데이터를 얼만큼 끊어서 처리할지에 대한 값으로 적당한 값을 선정해야 합니다.  
+(너무 작으면 I/O 처리가 많아지고 오버헤드 발생, 너무 크면 적재 및 자원 사용에 대한 비용과 실패시 부담이 커짐)
+
+## Read → Process → Write 작성
+
+* Read : BeforeEntity 테이블에서 읽어오는 Reader
+```java
+@Bean
+public RepositoryItemReader<BeforeEntity> beforeReader() {
+
+    return new RepositoryItemReaderBuilder<BeforeEntity>() //사용 엔티티정의
+            .name("beforeReader") //이름
+            .pageSize(10) //10개씩만 가져오겠다
+            .methodName("findAll") //findAll 쿼리 사용할것
+            .repository(beforeRepository) 
+            .sorts(Map.of("id", Sort.Direction.ASC)) // id로 sort해서 가져온다.
+            .build();
+}
+```
+아주 다양한 Reader 인터페이스와 구현체들이 존재하지만, 우리는 JPA를 통한 쿼리를 수행하기 때문에 RepositoryItemReader를 사용합니다.  
+이때 청크 단위까지만 읽기 때문에 findAll을 하더라도 chunk 개수 만큼 사용하게 됩니다.  
+따라서 자원 낭비를 방지하기 위해 Sort를 진행하고 pageSize() 단위를 설정해 findAll이 아닌 페이지 만큼 읽어올 수 있도록 설정합니다.  
+
+* Process : 읽어온 데이터를 처리하는 Process (큰 작업을 수행하지 않을 경우 생략 가능, 지금과 같이 단순 이동은 사실 필요 없음)
+```java
+@Bean
+public ItemProcessor<BeforeEntity, AfterEntity> middleProcessor() {
+
+    return new ItemProcessor<BeforeEntity, AfterEntity>() {
+
+        @Override
+        public AfterEntity process(BeforeEntity item) throws Exception { //이전 Read에서 가져온 객체 item이름으로 가져옴
+
+            AfterEntity afterEntity = new AfterEntity();
+            afterEntity.setUsername(item.getUsername()); 
+
+            return afterEntity;
+        }
+    };
+}
+```
+(람다식으로 변경 가능)  
+
+* Write : AfterEntity에 처리한 결과를 저장하는 Writer
+```java
+@Bean
+public RepositoryItemWriter<AfterEntity> afterWriter() {
+
+    return new RepositoryItemWriterBuilder<AfterEntity>() //엔티티로 save 쿼리 저장
+            .repository(afterRepository)
+            .methodName("save")
+            .build();
+}
+```
+Writer 또한 다양한 인터페이스 및 구현체가 존재하지만 JPA를 통한 쿼리를 날리는게 목표로 RepositoryItemWriter를 사용합니다.  
+
+이렇게 일차적으로 완성된 코드는 바로 동작은 안합니다. 우리가 원하는 트리거로 원하는 때에 동작시키고 싶어 properties에 job.enalbe을 false로 해두었기때문입니다.   
+다음 학습에서 이를 세팅해보겠습니다.  
+
+## 전체 코드
+```java
+@Configuration
+public class FirstBatch {
+
+    private final JobRepository jobRepository;
+    private final PlatformTransactionManager platformTransactionManager;
+
+    private final BeforeRepository beforeRepository;
+    private final AfterRepository afterRepository;
+
+    public FirstBatch(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager, BeforeRepository beforeRepository, AfterRepository afterRepository) {
+
+        this.jobRepository = jobRepository;
+        this.platformTransactionManager = platformTransactionManager;
+        this.beforeRepository = beforeRepository;
+        this.afterRepository = afterRepository;
+    }
+
+    @Bean
+    public Job firstJob() {
+
+        System.out.println("first job");
+
+        return new JobBuilder("firstJob", jobRepository)
+                .start(firstStep())
+                .build();
+    }
+
+    @Bean
+    public Step firstStep() {
+
+        System.out.println("first step");
+
+        return new StepBuilder("firstStep", jobRepository)
+                .<BeforeEntity, AfterEntity> chunk(10, platformTransactionManager)
+                .reader(beforeReader())
+                .processor(middleProcessor())
+                .writer(afterWriter())
+                .build();
+    }
+
+    @Bean
+    public RepositoryItemReader<BeforeEntity> beforeReader() {
+
+        return new RepositoryItemReaderBuilder<BeforeEntity>()
+                .name("beforeReader")
+                .pageSize(10)
+                .methodName("findAll")
+                .repository(beforeRepository)
+                .sorts(Map.of("id", Sort.Direction.ASC))
+                .build();
+    }
+
+    @Bean
+    public ItemProcessor<BeforeEntity, AfterEntity> middleProcessor() {
+
+        return new ItemProcessor<BeforeEntity, AfterEntity>() {
+
+            @Override
+            public AfterEntity process(BeforeEntity item) throws Exception {
+
+                AfterEntity afterEntity = new AfterEntity();
+                afterEntity.setUsername(item.getUsername());
+
+                return afterEntity;
+            }
+        };
+    }
+
+    @Bean
+    public RepositoryItemWriter<AfterEntity> afterWriter() {
+
+        return new RepositoryItemWriterBuilder<AfterEntity>()
+                .repository(afterRepository)
+                .methodName("save")
+                .build();
+    }
+}
+```
+
+## 참고
+https://www.youtube.com/watch?v=1ABbCRZh5v4&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=5  
+https://www.youtube.com/watch?v=vY_UGvWTh0Q&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=7 
+
+---
 # 20241011
 # 스프링배치 프로젝트 생성, DB 연결
 
