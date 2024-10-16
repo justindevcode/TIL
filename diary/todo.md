@@ -1,6 +1,419 @@
 # todo
 
 ---
+# 20241016
+# 배치처리1 실행, 스케쥴, 배치처리2 테이블조건
+
+## 배치1 실행
+저번 시간에 작성한 테이블 → 테이블 데이터 이동 배치를 실행시켜야 합니다.  
+우리는 application.properties에서 배치 자동 실행에 대한 변수 값을 false로 설정 했기 때문에 배치를 실행시키기 위한 jobLauncher를 구현해야 합니다.  
+
+## jobLauncher 및 실행 변수
+정의한 Job을 실행 시키기 위해서는 아래와 같은 구현을 진행해야 합니다.  
+(예시 로직, 실제로 동작하지 않는 슈도 코드)  
+```java
+private final JobLauncher jobLauncher;
+private final JobRegistry jobRegistry;
+
+JobParameters jobParameters = new JobParametersBuilder()
+        .addString("date", value)
+        .toJobParameters();
+
+jobLauncher.run(jobRegistry.getJob("firstJob"), jobParameters);
+```
+필요한 모듈을 사용하면서 파라미터를 통해서 중복실행을 방지합니다.  
+
+## 컨트롤러에서 실행
+“/first” 경로로 요청이 들어온다면, 배치 1을 실행하도록 설정하겠습니다.  
+이때 배치 실행에 대한 판단 값도 함께 넘겨줘야 중복 실행 및 실행 스케줄을 확인할 수 있습니다.  
+
+```java
+@Controller
+@ResponseBody
+public class MainController {
+
+    private final JobLauncher jobLauncher;
+    private final JobRegistry jobRegistry;
+
+    public MainController(JobLauncher jobLauncher, JobRegistry jobRegistry) {
+        this.jobLauncher = jobLauncher;
+        this.jobRegistry = jobRegistry;
+    }
+
+    @GetMapping("/first")
+    public String firstApi(@RequestParam("value") String value) throws Exception {
+
+        JobParameters jobParameters = new JobParametersBuilder()
+                .addString("date", value)
+                .toJobParameters();
+
+        jobLauncher.run(jobRegistry.getJob("firstJob"), jobParameters);
+
+
+        return "ok";
+    }
+}
+```
+동기적으로 처리되기 때문에 요청 → 처리 → 응답에 대한 딜레이가 발생한다. (callable과 같은 도구로 비동기 처리를 진행해도 좋다.)  
+
+## 스케쥴로 실행
+* Main 클래스에 스케쥴 활성화 어노테이션 등록
+```java
+@SpringBootApplication
+@EnableScheduling
+public class SpringBatchApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(SpringBatchApplication.class, args);
+    }
+}
+```
+
+* Schedule Config  클래스 생성
+```java
+@Configuration
+public class FirstSchedule {
+
+    private final JobLauncher jobLauncher;
+    private final JobRegistry jobRegistry;
+
+    public FirstSchedule(JobLauncher jobLauncher, JobRegistry jobRegistry) {
+        this.jobLauncher = jobLauncher;
+        this.jobRegistry = jobRegistry;
+    }
+
+    @Scheduled(cron = "10 * * * * *", zone = "Asia/Seoul")
+    public void runFirstJob() throws Exception {
+
+        System.out.println("first schedule start");
+
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd-hh-mm-ss");
+        String date = dateFormat.format(new Date());
+
+        JobParameters jobParameters = new JobParametersBuilder()
+                .addString("date", date)
+                .toJobParameters();
+
+        jobLauncher.run(jobRegistry.getJob("firstJob"), jobParameters);
+    }
+}
+```
+
+## JobLauncher에서 JobParameter
+JobLauncher로 Job 실행시 JobParameter를 주는 이유는 실행한 작업에 대한 일자, 순번등을 부여해 동일한 일자에 대한 작업의 수행 여부를 확인하여 중복 실행 및 미실행을 예방할 수 있습니다.  
+
+만약 `/first/?value=a` 로 실행시킨후 다시 `/first/?value=a`로 요청을 보내면 실행되지 않습니다.  
+`/first/?value=b`로 바꾸게 되면 다시 실행이 됩니다.  
+
+## 배치 처리 2 : 테이블 조건 확인 후 값 변경
+두 번째 배치 작업은 하나의 테이블에서 조건을 통해 데이터를 읽은 후 데이터를 변경하고 다시 테이블에 저장하는 일 입니다.  
+이번 작업은 테이블에서 데이터를 읽어 “win” 컬럼 값이 10이 넘으면 “reward” 컬럼에 true 값을 주는 것 입니다.  
+
+![1](https://github.com/user-attachments/assets/540a7256-cba4-4753-bb0f-149c49cc4bfc)  
+
+## 테이블 : WinEntity
+
+* Entity 정의
+```java
+@Entity
+@Getter
+@Setter
+public class WinEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String username;
+    private Long win;
+    private Boolean reward;
+}
+```
+
+* Repository 정의
+```java
+public interface WinRepository extends JpaRepository<WinEntity, Long> {
+
+    Page<WinEntity> findByWinGreaterThanEqual(Long win, Pageable pageable);
+}
+```
+
+## 테이블에 실습 데이터 넣기
+* sql : insert into WinEntity
+```sql
+INSERT INTO WinEntity (id, reward, username, win) VALUES
+(1, FALSE, 'xxxjjhhh', 10),
+(2, FALSE, 'devyummi', 1),
+(3, FALSE, 'jihun', 3),
+(4, FALSE, 'user4', 20),
+(5, FALSE, 'user5', 20),
+(6, FALSE, 'user6', 7),
+(7, FALSE, 'user7', 13),
+(8, FALSE, 'user8', 11),
+(9, FALSE, 'user9', 14),
+(10, FALSE, 'user10', 0),
+(11, FALSE, 'user11', 5),
+(12, FALSE, 'user12', 6),
+(13, FALSE, 'user13', 13),
+(14, FALSE, 'user14', 17),
+(15, FALSE, 'user15', 8),
+(16, FALSE, 'user16', 3),
+(17, FALSE, 'user17', 9),
+(18, FALSE, 'user18', 11),
+(19, FALSE, 'user19', 13),
+(20, FALSE, 'user20', 19),
+(21, FALSE, 'user21', 5),
+(22, FALSE, 'user22', 3),
+(23, FALSE, 'user23', 1),
+(24, FALSE, 'user24', 0),
+(25, FALSE, 'user25', 0),
+(26, FALSE, 'user26', 1),
+(27, FALSE, 'user27', 3),
+(28, FALSE, 'user28', 4),
+(29, FALSE, 'user29', 12),
+(30, FALSE, 'user30', 11),
+(31, FALSE, 'user31', 10),
+(32, FALSE, 'user32', 20),
+(33, FALSE, 'user33', 2),
+(34, FALSE, 'user34', 5),
+(35, FALSE, 'user35', 1),
+(36, FALSE, 'user36', 16),
+(37, FALSE, 'user37', 7),
+(38, FALSE, 'user38', 6),
+(39, FALSE, 'user39', 10),
+(40, FALSE, 'user40', 20),
+(41, FALSE, 'user41', 19),
+(42, FALSE, 'user42', 2),
+(43, FALSE, 'user43', 3),
+(44, FALSE, 'user44', 4),
+(45, FALSE, 'user45', 4),
+(46, FALSE, 'user46', 14),
+(47, FALSE, 'user47', 2),
+(48, FALSE, 'user48', 0),
+(49, FALSE, 'user49', 19),
+(50, FALSE, 'user50', 13),
+(51, FALSE, 'user51', 0),
+(52, FALSE, 'user52', 12),
+(53, FALSE, 'user53', 19),
+(54, FALSE, 'user54', 7),
+(55, FALSE, 'user55', 9),
+(56, FALSE, 'user56', 7),
+(57, FALSE, 'user57', 2),
+(58, FALSE, 'user58', 20),
+(59, FALSE, 'user59', 19),
+(60, FALSE, 'user60', 18),
+(61, FALSE, 'user61', 12),
+(62, FALSE, 'user62', 11),
+(63, FALSE, 'user63', 1),
+(64, FALSE, 'user64', 0),
+(65, FALSE, 'user65', 21),
+(66, FALSE, 'user66', 4),
+(67, FALSE, 'user67', 5),
+(68, FALSE, 'user68', 8),
+(69, FALSE, 'user69', 2),
+(70, FALSE, 'user70', 3),
+(71, FALSE, 'user71', 11),
+(72, FALSE, 'user72', 11),
+(73, FALSE, 'user73', 11),
+(74, FALSE, 'user74', 7),
+(75, FALSE, 'user75', 18),
+(76, FALSE, 'user76', 19),
+(77, FALSE, 'user77', 12),
+(78, FALSE, 'user78', 3),
+(79, FALSE, 'user79', 7),
+(80, FALSE, 'user80', 7),
+(81, FALSE, 'user81', 8),
+(82, FALSE, 'user82', 5),
+(83, FALSE, 'user83', 5),
+(84, FALSE, 'user84', 2),
+(85, FALSE, 'user85', 1),
+(86, FALSE, 'user86', 3),
+(87, FALSE, 'user87', 8),
+(88, FALSE, 'user88', 9),
+(89, FALSE, 'user89', 12),
+(90, FALSE, 'user90', 11),
+(91, FALSE, 'user91', 1),
+(92, FALSE, 'user92', 3),
+(93, FALSE, 'user93', 2),
+(94, FALSE, 'user94', 19),
+(95, FALSE, 'user95', 20),
+(96, FALSE, 'user96', 23),
+(97, FALSE, 'user97', 1),
+(98, FALSE, 'user98', 0),
+(99, FALSE, 'user99', 3),
+(100, FALSE, 'batchhh100', 8);
+```
+
+## 스프링 배치 모식도
+![1](https://github.com/user-attachments/assets/097608b9-32bf-4784-b64b-7e0a7eca8c3c)  
+
+## 클래스 생성 및 Job 정의
+기본적으로 하나의 배치 Job을 정의할 클래스를 생성하고 Job 메소드를 등록해야 합니다.  
+이때 배치 작업시 사용할 Repository 의존성들도 필드에 주입을 받도록 하겠습니다.  
+
+```java
+@Configuration
+public class SecondBatch {
+
+    private final JobRepository jobRepository;
+    private final PlatformTransactionManager platformTransactionManager;
+    private final WinRepository winRepository;
+
+    public SecondBatch(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager, WinRepository winRepository) {
+        this.jobRepository = jobRepository;
+        this.platformTransactionManager = platformTransactionManager;
+        this.winRepository = winRepository;
+    }
+
+    @Bean
+    public Job secondJob() {
+
+        return new JobBuilder("secondJob", jobRepository)
+                .start(스텝들어갈자리)
+                .build();
+    }
+}
+```
+
+## 순서 생각 및 Step 정의
+Job을 정의 했지만, 실제 배치 처리는 Job 아래에 존재하는 하나의 Step에서 수행되게 됩니다.  
+따라서 Step에서 “읽기 → 처리 → 쓰기” 과정을 구성해야 하며, Step을 등록하기 위한 @Bean을 등록하겠습니다.  
+
+```java
+@Bean
+public Step secondStep() {
+
+    return new StepBuilder("secondStep", jobRepository)
+            .<WinEntity, WinEntity> chunk(10, platformTransactionManager)
+            .reader(winReader())
+            .processor(trueProcessor())
+            .writer(winWriter())
+            .build();
+}
+```
+정의한 Step은 Job의 start() 메소드 내부에 secondStep()을 넣어주시면 됩니다.  
+
+* 청크 : chunk
+이때 읽기 → 처리 → 쓰기 작업은 청크 단위로 진행되는데, 대량의 데이터를 얼만큼 끊어서 처리할지에 대한 값으로 적당한 값을 선정해야 합니다.  
+(너무 작으면 I/O 처리가 많아지고 오버헤드 발생, 너무 크면 적재 및 자원 사용에 대한 비용과 실패시 부담이 커짐)
+
+## Read → Process → Write 작성
+* Read : WinEntity 테이블에서 읽어오는 Reader
+```java
+@Bean
+public RepositoryItemReader<WinEntity> winReader() {
+
+    return new RepositoryItemReaderBuilder<WinEntity>()
+            .name("winReader")
+            .pageSize(10)
+            .methodName("findByWinGreaterThanEqual")
+            .arguments(Collections.singletonList(10L))
+            .repository(winRepository)
+            .sorts(Map.of("id", Sort.Direction.ASC))
+            .build();
+}
+```
+아주 다양한 Reader 인터페이스와 구현체들이 존재하지만, 우리는 JPA를 통한 쿼리를 수행하기 때문에 RepositoryItemReader를 사용합니다.  
+이때 데이터는 페이징을 통해 읽기 때문에 Repository에 존재하는 JPA 메소드도 Page<> 타입을 반환하도록 작성해야 합니다.  
+
+* Process : 읽어온 데이터를 처리하는 Process (큰 작업을 수행하지 않을 경우 생략 가능, 지금과 같이 단순 컬럼값 변경은 필요 없음)
+```java
+@Bean
+public ItemProcessor<WinEntity, WinEntity> trueProcessor() {
+
+    return item -> {
+        item.setReward(true);
+        return item;
+    };
+}
+```
+
+* Write : WinEntity에 처리한 결과를 저장
+```java
+@Bean
+public RepositoryItemWriter<WinEntity> winWriter() {
+
+    return new RepositoryItemWriterBuilder<WinEntity>()
+            .repository(winRepository)
+            .methodName("save")
+            .build();
+}
+```
+
+## 전체 코드
+```java
+@Configuration
+public class SecondBatch {
+
+    private final JobRepository jobRepository;
+    private final PlatformTransactionManager platformTransactionManager;
+    private final WinRepository winRepository;
+
+    public SecondBatch(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager, WinRepository winRepository) {
+        this.jobRepository = jobRepository;
+        this.platformTransactionManager = platformTransactionManager;
+        this.winRepository = winRepository;
+    }
+
+    @Bean
+    public Job secondJob() {
+
+        return new JobBuilder("secondJob", jobRepository)
+                .start(secondStep())
+                .build();
+    }
+
+    @Bean
+    public Step secondStep() {
+
+        return new StepBuilder("secondStep", jobRepository)
+                .<WinEntity, WinEntity> chunk(10, platformTransactionManager)
+                .reader(winReader())
+                .processor(trueProcessor())
+                .writer(winWriter())
+                .build();
+    }
+
+    @Bean
+    public RepositoryItemReader<WinEntity> winReader() {
+
+        return new RepositoryItemReaderBuilder<WinEntity>()
+                .name("winReader")
+                .pageSize(10)
+                .methodName("findByWinGreaterThanEqual")
+                .arguments(Collections.singletonList(10L))
+                .repository(winRepository)
+                .sorts(Map.of("id", Sort.Direction.ASC))
+                .build();
+    }
+
+    @Bean
+    public ItemProcessor<WinEntity, WinEntity> trueProcessor() {
+
+        return item -> {
+            item.setReward(true);
+            return item;
+        };
+    }
+
+    @Bean
+    public RepositoryItemWriter<WinEntity> winWriter() {
+
+        return new RepositoryItemWriterBuilder<WinEntity>()
+                .repository(winRepository)
+                .methodName("save")
+                .build();
+    }
+}
+```
+
+이 배치도 이전시간에 배운 스케쥴이나 엔드포인트를 통해서 시작점을 만들어주면 사용할 수 있습니다.  
+
+## 참고
+https://www.youtube.com/watch?v=ltKfPkD2wvE&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=7  
+https://www.youtube.com/watch?v=X1lGjIeNHF8&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=9  
+
+---
 # 20241015
 # 스프링배치 메타데이터 테이블, 처리1 테이블 TO 테이블
 
