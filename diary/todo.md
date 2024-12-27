@@ -1,6 +1,562 @@
 # todo
 
 ---
+# 20241227
+# 배치 처리5 테이블 to 엑셀, ItemStreamReader
+
+## 테이블 to 엑셀
+다섯 번째 배치 작업은 데이터베이스 테이블에서 엑셀 파일 한 시트로 이동시키는 일 입니다.  
+
+![image-337c1ba0-c9f6-491a-8ceb-adcceb75453c](https://github.com/user-attachments/assets/1fd0b2a3-b083-4761-9f6d-bce0d8fde5b9)  
+
+"엑셀 → 테이블"과 “테이블 → 엑셀”의 차이를 생각하면 좋습니다.  
+앞선 영상인 "엑셀 → 테이블"은 중간에 종료되더라도 중단점부터 실행하면 효율적입니다.  
+하지만, 이번 작업은 “테이블 → 엑셀”이 실패하면 파일을 새로 만들어야되기 때문에 중단점이 아니라 처음부터 배치를 처리하도록 설정해야 합니다.  
+(상황에 따라 다르겠지만, 파일을 만든다고 가정하면 새로 시작, 파일이 정의되어 있고 이어쓴다면 이어지는 부분 부터 진행하면 좋습니다.)  
+
+## 엑셀 접근 의존성 추가
+`implementation 'org.apache.poi:poi-ooxml:5.3.0'`  
+
+## 테이블 : BeforeEntity
+
+* Entity 정의
+```java
+@Entity
+@Getter
+@Setter
+public class BeforeEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String username;
+}
+```
+
+* Repository 정의
+```java
+public interface BeforeRepository extends JpaRepository<BeforeEntity, Long> {
+}
+```
+
+## 테이블에 실습 데이터 넣기
+* sql : insert into BeforeEntity
+```java
+INSERT INTO BeforeEntity (username) VALUES
+('Alice Johnson'),
+('Bob Smith'),
+('Charlie Brown'),
+('Diana Prince'),
+('Edward Davis'),
+('Fiona White'),
+('George Harris'),
+('Hannah Clark'),
+('Ian Walker'),
+('Jessica Lee'),
+('Kevin Robinson'),
+('Laura King'),
+('Michael Scott'),
+('Nina Evans'),
+('Oscar Wright'),
+('Pamela Adams'),
+('Quincy Green'),
+('Rachel Baker'),
+('Sam Harris'),
+('Tina Nelson'),
+('Ursula Moore'),
+('Victor Young'),
+('Wendy Thompson'),
+('Xander Garcia'),
+('Yara Martinez'),
+('Zachary Lewis'),
+('Amelia Jones'),
+('Benjamin Wilson'),
+('Clara Taylor'),
+('David Anderson'),
+('Emma Martinez'),
+('Frank Hernandez'),
+('Grace Robinson'),
+('Henry Walker'),
+('Ivy Young'),
+('Jack Scott'),
+('Katherine Lee'),
+('Liam Brown'),
+('Mia Harris'),
+('Noah King'),
+('Olivia Adams'),
+('Paul Nelson'),
+('Quinn Green'),
+('Riley White'),
+('Sophia Davis'),
+('Thomas Clark'),
+('Uma Evans'),
+('Vera Robinson'),
+('William Wright'),
+('Xena Baker'),
+('Yusuf Harris'),
+('Zoe Martinez'),
+('Aaron Scott'),
+('Bella Young'),
+('Carlos Robinson'),
+('Daisy Thompson'),
+('Ethan Moore'),
+('Faith Lewis'),
+('Gina Clark'),
+('Hank Green'),
+('Iris Martinez'),
+('James Taylor'),
+('Kelly Adams'),
+('Lucas King'),
+('Maggie White'),
+('Nathan Wilson'),
+('Opal Harris'),
+('Peter Scott'),
+('Queenie Davis'),
+('Ryan Baker'),
+('Sandra Green'),
+('Travis Johnson'),
+('Ulysses Clark'),
+('Vivian Martinez'),
+('Walter White'),
+('Xander Robinson'),
+('Yvette King'),
+('Zach Smith'),
+('Allison Davis'),
+('Bradley Moore'),
+('Chloe Harris'),
+('Daniel Green'),
+('Emily Taylor'),
+('Freddie Brown'),
+('Gabriella Wilson'),
+('Henry Scott'),
+('Isabella White'),
+('Jake Adams'),
+('Kaitlyn Robinson'),
+('Leo Clark'),
+('Madison King'),
+('Nina Brown'),
+('Owen Martinez'),
+('Peyton Harris'),
+('Quinton Moore'),
+('Rebecca White'),
+('Steve Wilson'),
+('Tara Scott'),
+('Ursula Green'),
+('Victor Harris'),
+('Wendy Adams'),
+('Xander King'),
+('Yvonne Davis'),
+('Zachary White');
+```
+
+## 클래스 생성 및 Job 정의
+하나의 배치 Job을 정의할 클래스를 생성하고 Job 메소드를 등록해야 합니다.  
+이때 배치 작업시 사용할 Repository 의존성들도 필드에 주입을 받도록 하겠습니다.  
+
+```java
+@Configuration
+public class FifthBatch {
+
+    private final JobRepository jobRepository;
+    private final PlatformTransactionManager platformTransactionManager;
+    private final BeforeRepository beforeRepository;
+
+    public FifthBatch(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager, BeforeRepository beforeRepository) {
+        this.jobRepository = jobRepository;
+        this.platformTransactionManager = platformTransactionManager;
+        this.beforeRepository = beforeRepository;
+    }
+
+    @Bean
+    public Job fifthJob() {
+
+        System.out.println("fifth job");
+
+        return new JobBuilder("fifthJob", jobRepository)
+                .start(fifthStep())
+                .build();
+    }
+
+    
+}
+```
+
+## 순서 생각 및 Step 정의
+
+Job을 정의 했지만, 실제 배치 처리는 Job 아래에 존재하는 하나의 Step에서 수행되게 됩니다.  
+따라서 Step에서 “읽기 → 처리 → 쓰기” 과정을 구상해야 하며, Step을 등록하기 위한 @Bean을 등록하겠습니다.  
+
+```java
+@Bean
+public Step fifthStep() {
+
+    System.out.println("fifth step");
+
+    return new StepBuilder("fifthStep", jobRepository)
+            .<BeforeEntity, BeforeEntity> chunk(10, platformTransactionManager)
+            .reader(fifthBeforeReader())
+            .processor(fifthProcessor())
+            .writer(excelWriter())
+            .build();
+}
+```
+정의한 Step은 Job의 start() 메소드 내부에 fourthStep()을 넣어주시면 됩니다.  
+
+* 청크 : chunk
+이때 읽기 → 처리 → 쓰기 작업은 청크 단위로 진행되는데, 대량의 데이터를 얼만큼 끊어서 처리할지에 대한 값으로 적당한 값을 선정해야 합니다.  
+(너무 작으면 I/O 처리가 많아지고 오버헤드 발생, 너무 크면 적재 및 자원 사용에 대한 비용과 실패시 부담이 커짐)
+
+## Read → Process → Write 작성
+* Read : BeforeEntity 테이블에서 읽어오는 Reader
+```java
+@Bean
+public RepositoryItemReader<BeforeEntity> fifthBeforeReader() {
+
+    RepositoryItemReader<BeforeEntity> reader = new RepositoryItemReaderBuilder<BeforeEntity>()
+            .name("beforeReader")
+            .pageSize(10)
+            .methodName("findAll")
+            .repository(beforeRepository)
+            .sorts(Map.of("id", Sort.Direction.ASC))
+            .build();
+
+    // 전체 데이터 셋에서 어디까지 수행 했는지의 값을 저장하지 않음
+    reader.setSaveState(false);
+
+    return reader;
+}
+```
+
+* Process : 읽어온 데이터를 처리하는 Processor
+```java
+@Bean
+public ItemProcessor<BeforeEntity, BeforeEntity> fifthProcessor() {
+
+    return item -> item;
+}
+```
+
+* Write : 엑셀 시트에 처리한 결과를 저장하는 Writer
+```java
+@Bean
+public ItemStreamWriter<BeforeEntity> excelWriter() {
+
+    try {
+        return new ExcelRowWriter("C:\\Users\\kim\\Desktop\\result.xlsx");
+        //리눅스나 맥은 /User/형태로
+    } catch (IOException e) {
+        throw new RuntimeException(e);
+    }
+}
+```
+우선은 ExcelWriter() 메소드를 만들고 실제 구현부는 따로 클래스를 빼도록 하겠습니다.  
+
+```java
+public class ExcelRowWriter implements ItemStreamWriter<BeforeEntity> {
+
+    private final String filePath;
+    private Workbook workbook;
+    private Sheet sheet;
+    private int currentRowNumber;
+    private boolean isClosed;
+
+    public ExcelRowWriter(String filePath) throws IOException {
+
+        this.filePath = filePath;
+        this.isClosed = false;
+        this.currentRowNumber = 0;
+    }
+
+    @Override
+    public void open(ExecutionContext executionContext) throws ItemStreamException {
+        workbook = new XSSFWorkbook();
+        sheet = workbook.createSheet("Sheet1");
+    }
+
+    @Override
+    public void write(Chunk<? extends BeforeEntity> chunk) {
+        for (BeforeEntity entity : chunk) {
+            Row row = sheet.createRow(currentRowNumber++);
+            row.createCell(0).setCellValue(entity.getUsername());
+        }
+    }
+
+    @Override
+    public void close() throws ItemStreamException {
+
+        if (isClosed) {
+            return;
+        }
+
+        try (FileOutputStream fileOut = new FileOutputStream(filePath)) {
+            workbook.write(fileOut);
+        } catch (IOException e) {
+            throw new ItemStreamException(e);
+        } finally {
+            try {
+                workbook.close();
+            } catch (IOException e) {
+                throw new ItemStreamException(e);
+            } finally {
+                isClosed = true;
+            }
+        }
+    }
+}
+```
+
+## 손상된파일 오류날때
+
+배치 어플리케이션을 종료하는 과정에서 이미 close()를 통해 정상적으로 닫힌 파일을 다시 핸들링하여 파일이 깨지는 이슈가 발생했습니다.  
+위 문제를 해결하기 위해 파일의 상태를 체크하는 필드 변수를 만들었고 변경점에 대해 코드 변경을 완료하였습니다.  
+
+## 전체코드
+
+```java
+@Configuration
+public class FifthBatch {
+
+    private final JobRepository jobRepository;
+    private final PlatformTransactionManager platformTransactionManager;
+    private final BeforeRepository beforeRepository;
+
+    public FifthBatch(JobRepository jobRepository, PlatformTransactionManager platformTransactionManager, BeforeRepository beforeRepository) {
+        this.jobRepository = jobRepository;
+        this.platformTransactionManager = platformTransactionManager;
+        this.beforeRepository = beforeRepository;
+    }
+
+    @Bean
+    public Job fifthJob() {
+
+        System.out.println("fifth job");
+
+        return new JobBuilder("fifthJob", jobRepository)
+                .start(fifthStep())
+                .build();
+    }
+
+    @Bean
+    public Step fifthStep() {
+
+        System.out.println("fifth step");
+
+        return new StepBuilder("fifthStep", jobRepository)
+                .<BeforeEntity, BeforeEntity> chunk(10, platformTransactionManager)
+                .reader(fifthBeforeReader())
+                .processor(fifthProcessor())
+                .writer(excelWriter())
+                .build();
+    }
+
+    @Bean
+    public RepositoryItemReader<BeforeEntity> fifthBeforeReader() {
+
+        return new RepositoryItemReaderBuilder<BeforeEntity>()
+                .name("beforeReader")
+                .pageSize(10)
+                .methodName("findAll")
+                .repository(beforeRepository)
+                .sorts(Map.of("id", Sort.Direction.ASC))
+                .build();
+    }
+
+    @Bean
+    public ItemProcessor<BeforeEntity, BeforeEntity> fifthProcessor() {
+
+        return item -> item;
+    }
+
+    @Bean
+    public ItemStreamWriter<BeforeEntity> excelWriter() {
+
+        try {
+            return new ExcelRowWriter("C:\\Users\\kim\\Desktop\\result.xlsx");
+            //리눅스나 맥은 /User/형태로
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    }
+}
+```
+
+```java
+public class ExcelRowWriter implements ItemStreamWriter<BeforeEntity> {
+
+    private final String filePath;
+    private Workbook workbook;
+    private Sheet sheet;
+    private int currentRowNumber;
+    private boolean isClosed;
+
+    public ExcelRowWriter(String filePath) throws IOException {
+
+        this.filePath = filePath;
+        this.isClosed = false;
+        this.currentRowNumber = 0;
+    }
+
+    @Override
+    public void open(ExecutionContext executionContext) throws ItemStreamException {
+        workbook = new XSSFWorkbook();
+        sheet = workbook.createSheet("Sheet1");
+    }
+
+    @Override
+    public void write(Chunk<? extends BeforeEntity> chunk) {
+        for (BeforeEntity entity : chunk) {
+            Row row = sheet.createRow(currentRowNumber++);
+            row.createCell(0).setCellValue(entity.getUsername());
+        }
+    }
+
+    @Override
+    public void close() throws ItemStreamException {
+
+        if (isClosed) {
+            return;
+        }
+
+        try (FileOutputStream fileOut = new FileOutputStream(filePath)) {
+            workbook.write(fileOut);
+        } catch (IOException e) {
+            throw new ItemStreamException(e);
+        } finally {
+            try {
+                workbook.close();
+            } catch (IOException e) {
+                throw new ItemStreamException(e);
+            } finally {
+                isClosed = true;
+            }
+        }
+    }
+}
+```
+
+## ItemStreamReader 배치에서 데이터를 읽는 Reader
+
+스프링 배치에서 가장 중요한 부분은 Reader 부분입니다. 현재까지 실행한 부분을 메타데이터에 저장해야하고 처리한 부분은 스킵해야 되기 때문입니다.  
+스프링 배치에서 다양한 Reader 구현체를 제공합니다.  
+하지만 내가 원하는 구현체가 없는 경우 직접 작성해야 하는데, 기본적인 Reader 인터페이스에 대한 Reader를 구현 방법에 대해서 간략하게 알아보겠습니다.  
+
+## ItemStreamReader
+앞선 엑셀 읽기 부분에서 사용했던 ItemStreamReader입니다.  
+이 인터페이스는 배치의 초기화 및 상태를 관리할 수 있는 ItemStream과 실제 데이터 처리를 진행하는 ItemReader를 상속 받고 있습니다.  
+ItemStreamReader = ItemStream + ItemReader  
+```java
+public interface ItemStreamReader<T> extends ItemStream, ItemReader<T> {
+
+}
+```
+
+## ItemReader<>
+```java
+@FunctionalInterface
+public interface ItemReader<T> {
+
+
+	@Nullable
+	T read() throws Exception, UnexpectedInputException, ParseException, NonTransientResourceException;
+
+}
+```
+* read()
+배치 작업시 데이터를 읽기 위한 부분으로 하나의 데이터를 읽어올 때 read() 메소드가 호출됩니다.
+
+## ItemStream
+```java
+public interface ItemStream {
+
+
+	default void open(ExecutionContext executionContext) throws ItemStreamException {
+	}
+
+
+	default void update(ExecutionContext executionContext) throws ItemStreamException {
+	}
+
+
+	default void close() throws ItemStreamException {
+	}
+
+}
+```
+* open(ExecutionContext executionContext)
+배치 처리가 시작되고 Step에서 처음 reader를 부르면 시작되는 부분으로 초기화나 이미 했던 작업의 경우 중단점 까지 건너 뛰도록 설계하는 부분입니다.
+
+* update(ExecutionContext executionContext)
+배치 작업시 read()와 함께 불려지는 메소드로 read() 호출 후 바로 호출되기 때문에 read()에서 처리한 작업 단위를 기록하는 용도로 사용됩니다.
+
+* close()
+배치 작업이 완료되고 불려지는 메소드로 파일을 저장하거나 필드 변수를 초기화하는 메소드로 사용됩니다.
+
+## ExecutionContext
+ItemStream의 open(), update()에 매개변수로 주입되는 있는 객체로 배치 작업 처리시 기준점을 잡을 변수를 계속하여 트래킹하기 위한 저장소로 사용됩니다.  
+해당 클래스에서 put으로 값을 넣고, get으로 넣은 값을 가져옵니다.  
+
+ExecutionContext 데이터는 JdbcExecutionContextDao에 의해 메타데이터 테이블에 저장되며 범위에 따라 아래와 같이 나뉩니다.  
+* BATCH_JOB_EXECUTION_CONTEXT
+* BATCH_STEP_EXECUTION_CONTEXT
+
+## 구현 예시
+실제로 동작하는 코드는 아니지만 예시로 작성 했습니다.  
+
+```java
+public class CustomItemStreamReaderImpl implements ItemStreamReader<String> {
+
+    private final RestTemplate restTemplate;
+    private int currentId;
+    private final String CURRENT_ID_KEY = "current.call.id";
+    private final String API_URL = "https://www.devyummi.com/page?id=";
+
+    public CustomItemStreamReaderImpl(RestTemplate restTemplate) {
+
+        this.currentId = 0;
+        this.restTemplate = restTemplate;
+    }
+
+    @Override
+    public void open(ExecutionContext executionContext) throws ItemStreamException {
+
+        if (executionContext.containsKey(CURRENT_ID_KEY)) {
+            currentId = executionContext.getInt(CURRENT_ID_KEY);
+        }
+    }
+
+    @Override
+    public String read() throws Exception, UnexpectedInputException, ParseException, NonTransientResourceException {
+
+        currentId++;
+
+        String url = API_URL + currentId;
+        String response = restTemplate.getForObject(url, String.class);
+
+        if (response == null) {
+            return null;
+        }
+        return response;
+    }
+
+    @Override
+    public void update(ExecutionContext executionContext) throws ItemStreamException {
+        executionContext.putInt(CURRENT_ID_KEY, currentId);
+    }
+
+    @Override
+    public void close() throws ItemStreamException {
+
+    }
+}
+```
+
+## 참조
+https://www.youtube.com/watch?v=G_yVcism96A&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=11  
+https://www.youtube.com/watch?v=4D65kFIPUyo&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=13  
+
+
+---
 # 20241016
 # 배치처리1 실행, 스케쥴, 배치처리2 테이블조건
 
