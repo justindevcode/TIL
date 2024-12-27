@@ -503,6 +503,8 @@ ExecutionContext 데이터는 JdbcExecutionContextDao에 의해 메타데이터 
 ## 구현 예시
 실제로 동작하는 코드는 아니지만 예시로 작성 했습니다.  
 
+아래 예시처럼 `open`함수처럼 현재의 상태를 트레킹하는부분이 꼭필요 대부분 `read`함수만 만들어쓰고 마는 경우가 많음  
+
 ```java
 public class CustomItemStreamReaderImpl implements ItemStreamReader<String> {
 
