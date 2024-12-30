@@ -1,6 +1,302 @@
 # todo
 
 ---
+# 20241230
+# step설정, job설정, JPA 성능 문제와 JDBC
+
+## step
+
+우리는 이미 배치에서 Step을 만들었지만, 마지막으로 간단하게 Step에 대해서 알아보고 추가할 수 있는 안전 장치인 설정들에 대해 알아보겠습니다.  
+Step은 배치 작업을 처리하는 하나의 묶음 입니다. 이런 Step은 두 가지 방식 중 하나로 구현됩니다.  
+
+* Step
+Chunk 방식 처리 (Read → Process → Write)
+Tasklet 방식 처리
+
+우리는 Chunk 단위 처리에 대해서만 알아보았습니다. Tasklet 방식은 아주 간단한 동작만 하기 때문에 데이터 조건을 걸어 이동하는데는 거의 사용하지 않습니다. (단순 파일 삭제, 값 초기화)  
+
+따라서 Chunk 단위에 대해서 집중하면 될 거 같습니다. 아래서 Chunk 처리 과정에 대해서 간략하게 알아보겠습니다.  
+
+## Step : Chunk 단위 처리 과정
+청크 값을 10으로 설정 했다면  
+(Read) X 10 → (Process) X 10 → Write  
+
+## Skip
+Skip은 Step의 과정 중 예외가 발생하게 되면 예외를 특정 수 까지 건너 뛸 수 있도록 설정하는 방법입니다.  
+
+* 예시
+```java
+@Bean
+public Step sixthStep() {
+
+    return new StepBuilder("sixthStep", jobRepository)
+            .<BeforeEntity, AfterEntity> chunk(10, platformTransactionManager)
+            .reader(beforeSixthReader())
+            .processor(middleSixthProcessor())
+            .writer(afterSixthWriter())
+            .faultTolerant()
+            .skip(Exception.class)
+            .noSkip(FileNotFoundException.class)
+            .noSkip(IOException.class)
+            .skipLimit(10)
+            .build();
+}
+```
+(skip과 noSkip의 순서는 무방함)  
+`.skip(Exception.class)`이런식으로 전체 허용 해두고 
+`.noSkip(FileNotFoundException.class)`특정한 부분 스킵 안되도록 많이설정  
+
+* Skip을 조금 더 커스텀 하는 방법 (모든 예외를 허용)
+```java
+@Bean
+public Step sixthStep() {
+
+    return new StepBuilder("sixthStep", jobRepository)
+            .<BeforeEntity, AfterEntity> chunk(10, platformTransactionManager)
+            .reader(beforeSixthReader())
+            .processor(middleSixthProcessor())
+            .writer(afterSixthWriter())
+            .faultTolerant()
+            .skipPolicy(customSkipPolicy)
+            .noSkip(FileNotFoundException.class)
+            .noSkip(IOException.class)
+            .build();
+}
+```
+
+```java
+@Configuration
+public class CustomSkipPolicy implements SkipPolicy {
+
+    @Override
+    public boolean shouldSkip(Throwable t, long skipCount) throws SkipLimitExceededException {
+        return true;
+    }
+}
+```
+커스텀 허용 함수 만들어주는 방법 있음  
+https://docs.spring.io/spring-batch/reference/step/chunk-oriented-processing/configuring-skip.html  
+커스텀 예외허용 공식문서  
+
+## Retry
+Retry는 Step의 과정 중 예외가 발생하게 되면 예외를 특정 수 까지 반복 할 수 있도록 설정하는 방법입니다.  
+
+```java
+@Bean
+public Step sixthStep() {
+
+    return new StepBuilder("sixthStep", jobRepository)
+            .<BeforeEntity, AfterEntity> chunk(10, platformTransactionManager)
+            .reader(beforeSixthReader())
+            .processor(middleSixthProcessor())
+            .writer(afterSixthWriter())
+            .faultTolerant()
+            .retryLimit(3)
+            .retry(SQLException.class)
+            .retry(IOException.class)
+            .noRetry(FileNotFoundException.class)
+            .build();
+}
+```
+https://docs.spring.io/spring-batch/reference/step/chunk-oriented-processing/retry-logic.html  
+Retry 공식 문서  
+
+## Writer 롤백 제어
+Writer시 특정 예외에 대해 트랜잭션 롤백을 제외하는 방법  
+
+```java
+@Bean
+public Step step1(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
+	return new StepBuilder("step1", jobRepository)
+				.<String, String>chunk(2, transactionManager)
+				.reader(itemReader())
+				.writer(itemWriter())
+				.faultTolerant()
+				.noRollback(ValidationException.class)
+				.build();
+}
+```
+롤백 안하고 싶을때 설정가능  
+
+## Step listener
+stepListener는 Step의 실행 전후에 특정 작업을 수행 시킬 수 있는 방법입니다.  
+로그를 남기거나 다음 Step이 준비가 되었는지, 이번 Step과 다음 Step이 의존되는 경우 변수 정리를 진행할 수 있습니다.  
+
+```java
+@Bean
+public StepExecutionListener stepExecutionListener() {
+
+    return new StepExecutionListener() {
+        @Override
+        public void beforeStep(StepExecution stepExecution) {
+            StepExecutionListener.super.beforeStep(stepExecution);
+        }
+
+        @Override
+        public ExitStatus afterStep(StepExecution stepExecution) {
+            return StepExecutionListener.super.afterStep(stepExecution);
+        }
+    };
+}
+
+@Bean
+public Step sixthStep() {
+
+    return new StepBuilder("sixthStep", jobRepository)
+            .<BeforeEntity, AfterEntity> chunk(10, platformTransactionManager)
+            .reader(beforeSixthReader())
+            .processor(middleSixthProcessor())
+            .writer(afterSixthWriter())
+            .listener(stepExecutionListener())
+            .build();
+}
+```
+Step실행 전후 뭔가 하고싶을때  
+
+## Job 설정
+실습 에서는 하나의 Step만 가지는 Job을 구성했지만 다양한 Step을 구성하고 조건을 둘 수 있는 방법에 대해 살펴보고,  
+Job에 추가할 수 있는 여러 설정들을 알아보겠습니다.  
+
+## Step flow
+
+* 순차적으로 Step 실행
+```java
+@Bean
+public Job footballJob(JobRepository jobRepository) {
+    return new JobBuilder("footballJob", jobRepository)
+                     .start(playerLoad())
+                     .next(gameLoad())
+                     .next(playerSummarization())
+                     .build();
+}
+```
+가장 첫 번째 실행될 Step만 start() 메소드로 설정한 뒤, next()로 이어주면 됩니다.  
+다만 앞선 Step이 실패할 경우 연달아 등장하는 Step 또한 실행되지 않습니다.  
+
+* 조건에 따라 실행
+```java
+@Bean
+public Job job(JobRepository jobRepository, Step stepA, Step stepB, Step stepC, Step stepD) {
+	return new JobBuilder("job", jobRepository)
+				.start(stepA)
+				.on("*").to(stepB)
+				.from(stepA).on("FAILED").to(stepC)
+				.from(stepA).on("COMPLETED").to(stepD)
+				.end()
+				.build();
+}
+```
+성공했을때 다음 스텝 실패했을때 다음스탭 등 설정가능  
+https://docs.spring.io/spring-batch/reference/step/controlling-flow.html  
+flow공식문서  
+
+## Job listener
+jobListener는 Job의 실행 전후에 특정 작업을 수행 시킬 수 있는 방법입니다.  
+
+```java
+    @Bean
+    public JobExecutionListener jobExecutionListener() {
+        
+        return new JobExecutionListener() {
+            @Override
+            public void beforeJob(JobExecution jobExecution) {
+                JobExecutionListener.super.beforeJob(jobExecution);
+            }
+
+            @Override
+            public void afterJob(JobExecution jobExecution) {
+                JobExecutionListener.super.afterJob(jobExecution);
+            }
+        };
+    }
+
+    @Bean
+    public Job sixthBatch() {
+
+        return new JobBuilder("sixthBatch", jobRepository)
+                .start(sixthStep())
+                .listener(jobExecutionListener())
+                .build();
+    }
+```
+
+## JPA 성능 문제와 JDBC (JPA의 Write 성능 문제)
+스프링 배치 read와 write 부분을 JPA로 구성할 경우 JDBC 대비 처리 속도가 엄청나게 저하됩니다.  
+Reader의 경우 큰 영향을 미치진 않지만, Writer의 경우 엄청난 영향을 끼치는 이유는 아래와 같습니다.  
+
+## 성능 저하 이유 : bulk 쿼리 실패
+Entity의 Id 생성 전략은 보통 IDENTITY로 설정하게 됩니다. 이 설정은 `save() 수행시 DB 테이블을 조회하여 가장 마지막 값 보다 1을 증가 시킨 값을 저장하게 됩니다`.  
+여기서 Batch 처리 청크 단위 bulk insert 수행이 무너지게 됩니다.  
+JDBC 기반으로 작성하게 된다면 청크로 설정한 값이 모이게 된다면 bulk 쿼리로 단 1번의 insert가 수행되지만  
+JPA의 IDENTITY 전략 때문에 bulk 쿼리 대신 각각의 수만큼 insert가 수행됩니다.  
+
+## 비교 구현
+* Reader
+```java
+@Bean
+public RepositoryItemReader<BeforeEntity> beforeSixthReader() {
+
+    return new RepositoryItemReaderBuilder<BeforeEntity>()
+            .name("beforeReader")
+            .pageSize(10)
+            .methodName("findAll")
+            .repository(beforeRepository)
+            .sorts(Map.of("id", Sort.Direction.ASC))
+            .build();
+}
+
+@Bean
+public JdbcPagingItemReader<BeforeEntity> beforeSixthReader() {
+
+    return new JdbcPagingItemReaderBuilder<BeforeEntity>()
+            .name("beforeSixthReader")
+            .dataSource(dataSource)
+            .selectClause("SELECT id, username")
+            .fromClause("FROM BeforeEntity")
+            .sortKeys(Map.of("id", Order.ASCENDING))
+            .rowMapper(new CustomBeforeRowMapper())
+            .pageSize(10)
+            .build();
+}
+```
+
+* Writer
+```java
+@Bean
+public RepositoryItemWriter<AfterEntity> afterSixthWriter() {
+
+    return new RepositoryItemWriterBuilder<AfterEntity>()
+            .repository(afterRepository)
+            .methodName("save")
+            .build();
+}
+
+@Bean
+public JdbcBatchItemWriter<AfterEntity> afterSixthWriter() {
+
+    String sql = "INSERT INTO AfterEntity (username) VALUES (:username)";
+
+    return new JdbcBatchItemWriterBuilder<AfterEntity>()
+            .dataSource(dataSource)
+            .sql(sql)
+            .itemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider<>())
+            .build();
+}
+```
+
+## 성능 측정
+Job에 Listener 등록 후 시작 및 종료 시간 차이 측정  
+순수 데이터 이동 104개  
+2배정도 차이남  
+
+이외에 상세하게 성능튜닝법은 네이버나 배민등 기술블로그에 잘나와있음  
+
+## 참고
+https://www.youtube.com/watch?v=IRTLwGOCpIw&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=13  
+https://www.youtube.com/watch?v=FSjUJYZOtXo&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=15  
+https://www.youtube.com/watch?v=GVSaAzYzCog&list=PLJkjrxxiBSFCaxkvfuZaK5FzqQWJwmTfR&index=16  
+
+---
 # 20241227
 # 배치 처리5 테이블 to 엑셀, ItemStreamReader
 
