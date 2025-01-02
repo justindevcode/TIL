@@ -1,6 +1,183 @@
 # todo
 
 ---
+# 20250102
+# 윈도우즈 환경 WSL 설치, gradle 네이티브 컴파일 방법
+
+## 네이티브 빌드 스펙
+스프링을 네이티브로 빌드하기 위해선 까다로운 스펙이 요구됩니다.  
+
+* 소프트웨어 스펙
+우선 윈도우즈 환경은 구성 가능하지만 설정할 부분이 매우 많고 안돌아가는 경우도 많기 때문에 리눅스 환경을 99% 추천 드립니다.  
+이번 시리즈에서는 우분투 22.04 환경을 사용하도록 하겠습니다. (버전은 크게 상관 없습니다.)  
+
+* 하드웨어 스펙
+AWS EC2 환경을 체택하려 했으나 t2.micro ~ t3.large 환경까지 테스트한 결과 CPU 부하로 인해 빌드가 모두 실패했습니다.  
+I7-13세대 환경에서도 CPU 부하율이 1분간 100%를 차지하기 때문에 상당히 좋은 수준의 CPU가 요구됩니다.  
+대략적인 테스트 결과 램은 최소 8GB 이상, CPU는 I3-13세대 이상의 성능을 추천드립니다.  
+(매우 안좋은 최적화 상태를 보입니다.)
+
+## WSL 필요
+대부분의 시청자분들은 윈도우즈 환경을 사용하실거라 예상합니다. 빌드를 위해 리눅스를 준비해야하는데 클라우드 환경은 실패하는 경우가 많기 때문에 윈도우즈 환경 위에 가상화 리눅스를 올리는 WSL을 통해 우분투 22.04를 설치하도록 하겠습니다.  
+성능 좋은 리눅스나 맥 환경을 소유하신 시청자분들은 WSL 설치 과정이 필요 없습니다.  
+!!!! 무조건 윈도우즈 프로 버전이 필요합니다, 홈 에디션 설치 불가!!!!  
+
+## 윈도우즈 기본 설정
+* Hyper-V 활성화 확인 : 가상화 : 사용
+* Linux용 Windows 하위 시스템 활성 (윈도우즈 검색에서 : "Windows 기능 켜기/끄기" 검색 > 제어판 → 프로그램 → "Windows 기능 켜기/끄기")
+
+## WSL 설치
+
+* POWERSHELL 관리자 모드 실행
+* 설치 명령어 입력
+`wsl --install`
+
+## WSL 명령어 안먹는 경우
+* CMD 관리자 권한 실행
+```
+dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
+dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
+```
+
+* 재부팅
+
+* POWERSHELL 관리자 권한 실행
+`Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux`
+
+시간 어느정도 소요
+
+* 재부팅
+
+## WSL에 우분투 설치
+* 리눅스 목록 확인
+`wsl --list --online`  
+
+* 우분투 22.04 버전 설치
+`wsl --install Ubuntu-22.04`  
+
+* 아이디입력
+* 비밀번호 2회 입력 (없으면 엔터키)
+
+## 접속
+* 설치된 목록 확인
+`wsl -l -v`
+
+* 접속
+`wsl -d Ubuntu-22.04`
+
+## 설치된 리눅스 제거
+`wsl --unregister Ubuntu-22.04`
+
+## gradle 네이티브 컴파일 방법
+
+GraalVM Native Support 의존성을 추가한 뒤 스프링 프로젝트를 만드셨다면, 네이티브로 빌드를 진행할 수 있습니다.  
+
+## 네이티브 빌드 방식
+
+설명드린 내용처럼 2가지 방법으로 빌드할 수 있고 각 방식의 과정과 결과는 아래와 같습니다.  
+
+* nativeCompile : 실행 파일로 빌드하는 방식
+* bootBuildImage : 실행 파일을 포함한 도커 이미지로 빌드하는 방식
+
+두 방법에 대해서 기본적인 리눅스 빌드 환경을 구성하는 방식은 거의 동일하며 bootBuildImage의 경우에만 후반부에 추가적으로 build.gradle 및 docker 설정 부분이 요구됩니다.  
+
+## 프로젝트를 리눅스 환경으로 이동
+방법1 : git repository에 업로드 후 다운로드 방식  
+방법2 : scp 명령어를 통한 전송  
+
+이후 바로 빌드 명령어인 아래 명령을 입력하면 환경 구성이 없기 때문에 실행되지 않습니다.  
+```
+./gradlew nativeCompile
+./gradlew bootBuildImage
+```
+
+## 리눅스 빌드 환경 구성
+
+초반부는 natvieCompile과 bootBuildImage가 동일합니다.  
+
+* apt 업데이트 및 기본적인 gcc 설치
+```
+sudo apt update
+sudo apt install build-essential zlib1g-dev unzip -y
+```
+
+* graalVM 환경 설치
+(공식 설치 링크 : https://www.graalvm.org/downloads/#)
+```
+wget https://download.oracle.com/graalvm/22/latest/graalvm-jdk-22_linux-x64_bin.tar.gz
+
+sudo tar -xzf graalvm-jdk-22_linux-x64_bin.tar.gz
+sudo mv graalvm-jdk-22.0.2+9.1 /usr/lib/graalvm
+```
+1. wget 또는 curl로 다운로드  
+2. 다운로드한 파일 tar로 압축 해제  
+3. 압축해제한 폴더를 /usr/lib/ 경로로 이동
+
+* Java 환경 변수 설정
+java 명령어를 사용하여 graalVM을 부를 수 있도록 환경 변수 설정 (상단에서 3번에 이동한 경로로 설정 진행)  
+```
+export GRAALVM_HOME=/usr/lib/graalvm
+export JAVA_HOME=$GRAALVM_HOME
+export PATH=$JAVA_HOME/bin:$PATH
+
+java -version
+native-image --version
+```
+(우리는 native-image를 통해 스프링 프로젝트를 네이티브 빌드하기 때문에 같이 설치가 되었는지 꼭 확인이 필요합니다. 과거 버전이 경우는 gu라는 JDK 설치 도구를 통해 추가 설치를 해야하지만 현재는 포함되어 있습니다.)  
+
+## ./gradlew nativeCompile
+실행 파일로 구성하는 방법  
+우리의 스프링 프로젝트 경로로 진입 후 gradlew 파일이 존재하는 곳에서  
+
+* 빌드 진행
+`./gradlew nativeCompile`
+
+* 결과
+프로젝트 내부 아래 경로에서 확인 가능
+`/build/native/nativeCompile`
+
+## ./gradlew bootBuildImage
+실행 파일을 포함한 도커 이미지로 구성하는 방법  
+여기서는 추가로 build.gradle 값 추가와 우분투에 Docker 환경을 설치하셔야 합니다.  
+
+* build.gradle 명령어 추가
+```
+bootBuildImage {
+    imageName = 'nativetest'
+}
+```
+소문자만 지원되며 빌드 후 도커 이미지 이름 값으로 부여됩니다.  
+
+* Docker 설치
+```
+sudo apt install apt-transport-https ca-certificates curl software-properties-common
+
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+
+sudo apt update
+
+sudo apt install docker-ce
+
+sudo systemctl status docker
+
+```
+
+* Docker 소켓에 권한 부여 (gradlew에서 접근을 위함)
+`sudo chmod 777 /var/run/docker.sock`
+
+* 빌드 진행
+`./gradlew bootBuildImage`
+
+* 결과
+`docker images`
+
+## 참고
+https://www.youtube.com/watch?v=5tDddRjFNeo&list=PLJkjrxxiBSFAvGAVh6mYpGBLr_h0wqLnV&index=3  
+https://www.youtube.com/watch?v=yncBMm85sa4&list=PLJkjrxxiBSFAvGAVh6mYpGBLr_h0wqLnV&index=5  
+
+---
 # 20241231
 # 스프링 네이티브 GraalVM 기초 설명과 특징확인
 
