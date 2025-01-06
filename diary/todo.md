@@ -1,6 +1,142 @@
 # todo
 
 ---
+# 20250106
+# 스프링 시큐리티 JWT 동작원리와 프로젝트 생성
+
+## 실습 목표
+스프링 시큐리티 6 프레임워크를 활용하여 JWT 기반의 인증/인가를 구현하고 회원 정보 저장(영속성) MySQL 데이터베이스를 활용한다.  
+서버는 API 서버 형태로 구축한다. (웹 페이지를 응답하는 것이 아닌 API 클라이언트 요청을 통해 데이터 응답만 확인함)  
+
+## 구현
+* 인증 : 로그인
+* 인가 : JWT를 통한 경로별 접근 권한
+* 회원가입
+
+## JWT 인증 방식 시큐리티 동작 원리
+
+* 회원가입 : 내부 회원 가입 로직은 세션 방식과 JWT 방식의 차이가 없다.
+
+![1](https://github.com/user-attachments/assets/22d99417-28aa-4a97-b789-28d00dda1d01)  
+
+* 로그인 (인증) : 로그인 요청을 받은 후 세션 방식은 서버 세션이 유저 정보를 저장하지만 JWT 방식은 토큰을 생성하여 응답한다.
+
+![1](https://github.com/user-attachments/assets/253cf3b7-a90b-4fa2-b433-cc3831f95060)  
+
+* 경로 접근 (인가) : JWT Filter를 통해 요청의 헤더에서 JWT를 찾아 검증을하고 일시적 요청에 대한 Session을 생성한다. (생성된 세션은 요청이 끝나면 소멸됨)
+
+![1](https://github.com/user-attachments/assets/7acf974e-c9a0-4f9d-83a6-52f863d10e42)  
+
+## 버전 및 의존성
+
+* Spring Boot 3.2.1
+* Security 6.2.1
+* Lombok
+* Spring Data JPA - MySQL
+* Gradle - Groovy
+* IntelliJ Ultimate
+
+## 기타
+* 스프링 시큐리티 JWT 구현 방법이 아주 많습니다. 개발자별 다른 구현을 진행하고 버전별로도 메소드가 많이 다릅니다. 최대한 공식 문서에 구현된 형태로 코드를 작성하지만 구현은 다를 수 있습니다.
+ 
+* 저는 간단하게 API 서버에서 JWT 구현을 진행했고 토큰 발급의 경우 단일 토큰으로 진행합니다. (Access, Refresh로 나누는 경우도 있지만 기본 강의라 간단하게 한개로 진행하겠습니다.)
+ 
+
+* 스프링 시큐리티 JWT 시리즈를 끝낸 후 OAuth2 소셜 로그인도 진행하려 합니다. (따라서 이번 시리즈에서는 소셜 로그인을 진행하지 않습니다.)
+ 
+
+* 개념적인 부분 설명은 어디서든지 찾아볼 수 있기 때문에 많이 줄이고 구현 실습 위주로 진행하겠습니다.
+ 
+
+* 제 코드는 JWT를 구현하기 위한 가장 기본적인 뼈대 코드입니다.
+
+공식문서 : https://docs.spring.io/spring-security/reference/servlet/architecture.html  
+
+## 프로젝트 생성 및 의존성 추가
+
+필수 의존성
+* Lombok
+* Spring Web
+* Spring Security
+* Spring Data JPA
+* MySQL Driver
+
+## 데이터베이스 의존성 주석 처리
+임시로 주석 처리 진행 (스프링 부트에서 데이터베이스 의존성을 추가한 뒤 연결을 진행하지 않을 경우 런타임 에러 발생)  
+
+## JWT 필수 의존성
+JWT 토큰을 생성하고 관리하기 위해 JWT 의존성을 필수적으로 설정해야 합니다.  
+설정은 build.gradle을 통해 진행하며 이때 버전을 선택하여 적용해야 합니다.  
+
+대부분은 JWT 0.11.5 버전을 통해 구현하지만 최신 버전은 0.12.3입니다. 따라서 0.12.3을 기반으로 구현하지만 추가적으로 0.11.5 버전에 대한 구현 방법도 올릴 예정입니다. (JWT를 생성하고 내부에서 데이터를 얻는 메소드가 버전마다 많이 상이합니다.)  
+
+* 0.12.3 버전 : build.gradle
+```
+dependencies {
+
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.3'
+    implementation 'io.jsonwebtoken:jjwt-impl:0.12.3'
+    implementation 'io.jsonwebtoken:jjwt-jackson:0.12.3'
+}
+```
+
+* 0.11.5 버전 : build.gradle
+```
+dependencies {
+
+    implementation 'io.jsonwebtoken:jjwt-api:0.11.5'
+    implementation 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    implementation 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+}
+```
+
+* 의존성 BOM
+https://mvnrepository.com/artifact/io.jsonwebtoken/jjwt-api/0.12.3
+
+https://mvnrepository.com/artifact/io.jsonwebtoken/jjwt-api/0.11.5  
+
+## 기본 Controller 생성
+* MainController
+```java
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+@Controller
+@ResponseBody
+public class MainController {
+
+    @GetMapping("/")
+    public String mainP() {
+
+        return "main Controller";
+    }
+}
+```
+
+* AdminController
+```java
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+@Controller
+@ResponseBody
+public class AdminController {
+
+    @GetMapping("/admin")
+    public String adminP() {
+
+        return "admin Controller";
+    }
+}
+```
+
+## 참고
+https://www.youtube.com/watch?v=NPRh2v7PTZg&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ  
+https://www.youtube.com/watch?v=ZTaZOCqTez4&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=3  
+
+---
 # 20250102
 # 윈도우즈 환경 WSL 설치, gradle 네이티브 컴파일 방법
 
