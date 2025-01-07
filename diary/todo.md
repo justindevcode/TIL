@@ -1,6 +1,163 @@
 # todo
 
 ---
+# 20250107
+# 시큐리티config, entity, DB설정
+
+## SecurityConfig 클래스 설명
+스프링 시큐리티의 인가 및 설정을 담당하는 클래스이다. Security Config 구현은 스프링 시큐리티의 세부 버전별로 많이 상이합니다. (이번 시리즈는 스프링 시큐리티 6.2.1 버전으로 구현합니다.)  
+자주 접할 수 있는 버전에 대한 구현 차이는 아래 영상을 통해 확인할 수 있습니다.  
+
+* 스프링 시큐리티 시리즈 : 버전별 Security Config 구현 방법
+https://www.youtube.com/watch?v=NdRVhOccuOs
+
+## Security Config 클래스 기본 요소 작성
+시큐리티 JWT 구현을 위한 Config 클래스의 일부분을 작성할 예정입니다. 먼저 기본적인 설정만 진행하고 시리즈를 진행하며 커스텀 필터 요소들을 추가 구현할 예정입니다.  
+
+* SecurityConfig
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+				//csrf disable
+        http
+                .csrf((auth) -> auth.disable());
+
+				//From 로그인 방식 disable
+        http
+                .formLogin((auth) -> auth.disable());
+
+				//http basic 인증 방식 disable
+        http
+                .httpBasic((auth) -> auth.disable());
+
+				//경로별 인가 작업
+        http
+                .authorizeHttpRequests((auth) -> auth
+                        .requestMatchers("/login", "/", "/join").permitAll()
+												.requestMatchers("/admin").hasRole("ADMIN")
+                        .anyRequest().authenticated());
+
+				//세션 설정
+        http
+                .sessionManagement((session) -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+
+        return http.build();
+    }
+}
+```
+JWT를 통한 인증/인가를 위해서 세션을 STATELESS 상태로 설정하는 것이 중요하다.  
+
+## BCryptPaasswordEncoder 등록
+* SecurityConfig
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public BCryptPasswordEncoder bCryptPasswordEncoder() {
+
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+        http
+                .csrf((auth) -> auth.disable());
+
+        http
+                .formLogin((auth) -> auth.disable());
+
+        http
+                .httpBasic((auth) -> auth.disable());
+
+        http
+                .authorizeHttpRequests((auth) -> auth
+                        .requestMatchers("/login", "/", "/join").permitAll()
+                        .anyRequest().authenticated());
+
+        http
+                .sessionManagement((session) -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+
+        return http.build();
+    }
+}
+```
+
+## POSTMAN 설치
+API 서버는 웹서버와 달리 서버측으로 요청을 보낼 수 있는 페이지가 존재하지 않고 엔드 포인트만 존재하기 때문에 요청을 보낼 API 클라이언트가 필요하다.  
+
+* 공식 홈페이지 주소
+https://www.postman.com/downloads/
+
+## DB연결 및 Entity 작성, 데이터베이스 종류와 ORM
+회원 정보를 저장하기 위한 데이터베이스는 MySQL 엔진의 데이터베이스를 사용한다. 그리고 접근은 Spring Data JPA를 사용한다.  
+
+## 데이터베이스 의존성 주석 해제
+2강에서 진행했던 build.gradle의 Spring Data JPA 및 MySQL Driver 의존성 주석을 해제한다.  
+
+## 변수 설정
+* DB 연결 설정 : application.properteis
+```
+spring.datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+spring.datasource.url=jdbc:mysql://아이피:3306/데이터베이스?useSSL=false&useUnicode=true&serverTimezone=Asia/Seoul&allowPublicKeyRetrieval=true
+spring.datasource.username=아이디
+spring.datasource.password=비밀번호
+```
+
+* Hibernate ddl 설정 : application.properites
+```
+spring.jpa.hibernate.ddl-auto=none
+spring.jpa.hibernate.naming.physical-strategy=org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+```
+
+## DB 연결에 대한 자세한 설명 참고
+https://www.youtube.com/watch?v=7dhbaMWaJ3Y  
+
+## 회원 테이블 Entity 작성 : UserEntity
+* UserEntity
+```java
+@Entity
+@Setter
+@Getter
+public class UserEntity {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private int id;
+
+    private String username;
+    private String password;
+
+    private String role;
+}
+```
+
+## 회원 테이블 Repository 작성 : UserRepository
+* UserRepository
+```java
+public interface UserRepository extends JpaRepository<UserEntity, Integer> {
+
+}
+```
+
+## ddl-auto=create 설정 후 실행
+데이터베이스에서 회원 정보를 저장할 테이블을 생성해야 하지만 ddl-auto 설정을 통해 스프링 부트 Entity 클래스 기반으로 테이블을 생성할 수 있다.  
+
+## 참고
+https://www.youtube.com/watch?v=A3YsWHGbeZQ&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=3  
+https://www.youtube.com/watch?v=TN2rEgvQObM&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=5  
+https://www.youtube.com/watch?v=JFTpzy7gsg0&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=6  
+
+---
 # 20250106
 # 스프링 시큐리티 JWT 동작원리와 프로젝트 생성
 
