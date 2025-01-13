@@ -1,6 +1,294 @@
 # todo
 
 ---
+# 20250113
+# 회원가입 로직구현, 로그인 필더 구현
+
+## 회원가입 로직
+
+![1](https://github.com/user-attachments/assets/eeb1d86a-eb16-4c2c-9a18-1e5f28dd98b1)  
+
+## JoinDTO
+* JoinDTO
+```java
+@Setter
+@Getter
+public class JoinDTO {
+
+    private String username;
+    private String password;
+}
+```
+
+## JoinController
+
+* JoinController
+```java
+@Controller
+@ResponseBody
+public class JoinController {
+    
+    private final JoinService joinService;
+
+    public JoinController(JoinService joinService) {
+        
+        this.joinService = joinService;
+    }
+
+    @PostMapping("/join")
+    public String joinProcess(JoinDTO joinDTO) {
+
+        System.out.println(joinDTO.getUsername());
+        joinService.joinProcess(joinDTO);
+
+        return "ok";
+    }
+}
+```
+
+## JoinService
+* JoinService
+```java
+@Service
+public class JoinService {
+
+    private final UserRepository userRepository;
+    private final BCryptPasswordEncoder bCryptPasswordEncoder;
+
+    public JoinService(UserRepository userRepository, BCryptPasswordEncoder bCryptPasswordEncoder) {
+
+        this.userRepository = userRepository;
+        this.bCryptPasswordEncoder = bCryptPasswordEncoder;
+    }
+
+    public void joinProcess(JoinDTO joinDTO) {
+
+        String username = joinDTO.getUsername();
+        String password = joinDTO.getPassword();
+
+        Boolean isExist = userRepository.existsByUsername(username);
+
+        if (isExist) {
+
+            return;
+        }
+
+        UserEntity data = new UserEntity();
+
+        data.setUsername(username);
+        data.setPassword(bCryptPasswordEncoder.encode(password));
+        data.setRole("ROLE_ADMIN");
+
+        userRepository.save(data);
+    }
+}
+```
+
+## UserRepository
+
+* UserRepository
+```java
+public interface UserRepository extends JpaRepository<UserEntity, Integer> {
+
+    Boolean existsByUsername(String username);
+}
+```
+
+## 로그인 필터 구현 자료
+
+* 스프링 시큐리티 필터 참고 자료 : https://docs.spring.io/spring-security/reference/servlet/architecture.html
+
+## 로그인 모식도
+![1](https://github.com/user-attachments/assets/c6799304-e961-4ca9-aa10-d89251c380c5)  
+
+## 스프링 시큐리티 필터 동작 원리
+스프링 시큐리티는 클라이언트의 요청이 여러개의 필터를 거쳐 DispatcherServlet(Controller)으로 향하는 중간 필터에서 요청을 가로챈 후 검증(인증/인가)을 진행한다.  
+
+* 클라이언트 요청 → 서블릿 필터 → 서블릿 (컨트롤러)
+<img width="530" alt="1" src="https://github.com/user-attachments/assets/0ad528bd-103d-47cd-ae2e-23dbf5e856a3" />
+
+* Delegating Filter Proxy
+서블릿 컨테이너 (톰캣)에 존재하는 필터 체인에 DelegatingFilter를 등록한 뒤 모든 요청을 가로챈다.
+
+<img width="290" alt="1" src="https://github.com/user-attachments/assets/1b4daa96-dbc2-4597-bb96-f8b852a22d73" />  
+
+* 서블릿 필터 체인의 DelegatingFilter → Security 필터 체인 (내부 처리 후) → 서블릿 필터 체인의 DelegatingFilter
+가로챈 요청은 SecurityFilterChain에서 처리 후 상황에 따른 거부, 리디렉션, 서블릿으로 요청 전달을 진행한다.
+
+<img width="625" alt="1" src="https://github.com/user-attachments/assets/883b599f-7f16-4aee-ae2e-55163356f736" />  
+
+* SecurityFilterChain의 필터 목록과 순서
+<img width="290" alt="1" src="https://github.com/user-attachments/assets/90ea5e9c-aed7-40bd-95ae-6aed6c0055ba" />
+
+(모든 필터는 전부 활성화되지 않습니다.)  
+
+## Form 로그인 방식에서 UsernamePasswordAuthenticationFilter
+Form 로그인 방식에서는 클라이언트단이 username과 password를 전송한 뒤 Security 필터를 통과하는데 UsernamePasswordAuthentication 필터에서 회원 검증을 진행을 시작한다.  
+(회원 검증의 경우 UsernamePasswordAuthenticationFilter가 호출한 AuthenticationManager를 통해 진행하며 DB에서 조회한 데이터를 UserDetailsService를 통해 받음)  
+우리의 JWT 프로젝트는 SecurityConfig에서 formLogin 방식을 disable 했기 때문에 기본적으로 활성화 되어 있는 해당 필터는 동작하지 않는다.  
+따라서 로그인을 진행하기 위해서 필터를 커스텀하여 등록해야 한다.  
+
+## 로그인 로직 구현 목표
+
+* 아이디, 비밀번호 검증을 위한 커스텀 필터 작성
+* DB에 저장되어 있는 회원 정보를 기반으로 검증할 로직 작성
+* 로그인 성공시 JWT를 반환할 success 핸들러 생성
+* 커스텀 필터 SecurityConfig에 등록
+
+
+## 로그인 요청 받기 : 커스텀 UsernamePasswordAuthentication 필터 작성
+로그인 검증을 위한 커스텀 UsernamePasswordAuthentication 필터 작성  
+
+* LoginFilter
+```java
+public class LoginFilter extends UsernamePasswordAuthenticationFilter {
+
+    private final AuthenticationManager authenticationManager;
+
+    public LoginFilter(AuthenticationManager authenticationManager) {
+
+        this.authenticationManager = authenticationManager;
+    }
+
+    @Override
+    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+
+				//클라이언트 요청에서 username, password 추출
+        String username = obtainUsername(request);
+        String password = obtainPassword(request);
+
+				//스프링 시큐리티에서 username과 password를 검증하기 위해서는 token에 담아야 함
+        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(username, password, null);
+
+				//token에 담은 검증을 위한 AuthenticationManager로 전달
+        return authenticationManager.authenticate(authToken);
+    }
+
+		//로그인 성공시 실행하는 메소드 (여기서 JWT를 발급하면 됨)
+    @Override
+    protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication authentication) {
+
+    }
+
+		//로그인 실패시 실행하는 메소드
+    @Override
+    protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, AuthenticationException failed) {
+
+    }
+}
+```
+
+## SecurityConfig 설정
+* SecurityConfig : 커스텀 로그인 필터 등록
+```java
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public BCryptPasswordEncoder bCryptPasswordEncoder() {
+
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+
+        http
+                .csrf((auth) -> auth.disable());
+
+        http
+                .formLogin((auth) -> auth.disable());
+
+        http
+                .httpBasic((auth) -> auth.disable());
+
+        http
+                .authorizeHttpRequests((auth) -> auth
+                        .requestMatchers("/login", "/", "/join").permitAll()
+                        .anyRequest().authenticated());
+
+				//필터 추가 LoginFilter()는 인자를 받음 (AuthenticationManager() 메소드에 authenticationConfiguration 객체를 넣어야 함) 따라서 등록 필요
+        http
+                .addFilterAt(new LoginFilter(), UsernamePasswordAuthenticationFilter.class);
+
+        http
+                .sessionManagement((session) -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+
+        return http.build();
+    }
+}
+```
+
+* SecurityConfig : AuthenticationMananger Bean 등록과 LoginFilter 인수 전달
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    //AuthenticationManager가 인자로 받을 AuthenticationConfiguraion 객체 생성자 주입
+    private final AuthenticationConfiguration authenticationConfiguration;
+
+    public SecurityConfig(AuthenticationConfiguration authenticationConfiguration) {
+
+        this.authenticationConfiguration = authenticationConfiguration;
+    }
+
+    //AuthenticationManager Bean 등록
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
+
+        return configuration.getAuthenticationManager();
+    }
+
+    @Bean
+    public BCryptPasswordEncoder bCryptPasswordEncoder() {
+
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+
+        http
+                .csrf((auth) -> auth.disable());
+
+        http
+                .formLogin((auth) -> auth.disable());
+
+        http
+                .httpBasic((auth) -> auth.disable());
+
+        http
+                .authorizeHttpRequests((auth) -> auth
+                        .requestMatchers("/login", "/", "/join").permitAll()
+                        .anyRequest().authenticated());
+
+//필터 추가 LoginFilter()는 인자를 받음 (AuthenticationManager() 메소드에 authenticationConfiguration 객체를 넣어야 함) 따라서 등록 필요
+        http
+                .addFilterAt(new LoginFilter(authenticationManager(authenticationConfiguration)), UsernamePasswordAuthenticationFilter.class);
+
+        http
+                .sessionManagement((session) -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+
+        return http.build();
+    }
+}
+```
+
+## 로그인 성공시 JWT 반환
+로그인 성공시 successfulAuthentication() 메소드를 통해 JWT를 응답해야 한다. 따라서 JWT 응답 구문을 작성해야 하는데 JWT 발급 클래스를 아직 생성하지 않았기 때문에 다음 시간에 DB 기반 회원 검증 구현을 진행한 뒤 JWT 발급 및 검증을 진행하는 클래스를 생성하겠습니다.  
+
+## 참조
+https://www.youtube.com/watch?v=yNACbJF4uoo&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=6  
+https://www.youtube.com/watch?v=3Ff7UHGG3t8&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=8  
+
+---
 # 20250107
 # 시큐리티config, entity, DB설정
 
