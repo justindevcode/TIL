@@ -1,6 +1,276 @@
 # todo
 
 ---
+# 20250114
+# DB기반 로그인검증로직, JWT 발급 클레스
+
+## DB 기반 로그인 검증
+
+![1](https://github.com/user-attachments/assets/98aa414d-5d1d-480e-9c3f-8e02b76ea4ea)  
+
+지난번 AuthenticationManager 앞단을 구현했고 이번 8강에서 DB에서 AuthenticationManager까지 로직을 구현하겠습니다.  
+구현은 UserDetails, UserDetailsService, UserRepository의 회원 조회 메소드를 진행하겠습니다.  
+
+## UserRepository
+
+* UserRepository
+```java
+public interface UserRepository extends JpaRepository<UserEntity, Integer> {
+
+    Boolean existsByUsername(String username);
+		
+		//username을 받아 DB 테이블에서 회원을 조회하는 메소드 작성
+    UserEntity findByUsername(String username);
+}
+```
+
+## UserDetailsService 커스텀 구현
+* CustomUserDetailsService
+```java
+@Service
+public class CustomUserDetailsService implements UserDetailsService {
+
+    private final UserRepository userRepository;
+
+    public CustomUserDetailsService(UserRepository userRepository) {
+
+        this.userRepository = userRepository;
+    }
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+				
+				//DB에서 조회
+        UserEntity userData = userRepository.findByUsername(username);
+
+        if (userData != null) {
+						
+						//UserDetails에 담아서 return하면 AutneticationManager가 검증 함
+            return new CustomUserDetails(userData);
+        }
+
+        return null;
+    }
+}
+```
+
+## UserDetails 커스텀 구현
+* CustomUserDetails
+```java
+public class CustomUserDetails implements UserDetails {
+
+    private final UserEntity userEntity;
+
+    public CustomUserDetails(UserEntity userEntity) {
+
+        this.userEntity = userEntity;
+    }
+
+
+    @Override
+    public Collection<? extends GrantedAuthority> getAuthorities() {
+
+        Collection<GrantedAuthority> collection = new ArrayList<>();
+
+        collection.add(new GrantedAuthority() {
+
+            @Override
+            public String getAuthority() {
+
+                return userEntity.getRole();
+            }
+        });
+
+        return collection;
+    }
+
+    @Override
+    public String getPassword() {
+
+        return userEntity.getPassword();
+    }
+
+    @Override
+    public String getUsername() {
+
+        return userEntity.getUsername();
+    }
+
+    @Override
+    public boolean isAccountNonExpired() {
+
+        return true;
+    }
+
+    @Override
+    public boolean isAccountNonLocked() {
+
+        return true;
+    }
+
+    @Override
+    public boolean isCredentialsNonExpired() {
+
+        return true;
+    }
+
+    @Override
+    public boolean isEnabled() {
+
+        return true;
+    }
+}
+```
+우리가 형식 맞춰서 만들어줘야함  
+
+## JWT 발급과 검증
+
+* 로그인시 → 성공 → JWT 발급
+* 접근시 → JWT 검증
+
+JWT에 관해 발급과 검증을 담당할 클래스가 필요하다. 따라서 JWTUtil이라는 클래스를 생성하여 JWT 발급, 검증 메소드를 작성하는 시간입니다.  
+
+## JWT 생성 원리
+
+공식페이지 : https://jwt.io/  
+
+JWT는 Header.Payload.Signature 구조로 이루어져 있다. 각 요소는 다음 기능을 수행한다.  
+
+* Header
+	* JWT임을 명시
+	* 사용된 암호화 알고리즘
+* Payload
+	* 정보
+* Signature
+	* 암호화알고리즘((BASE64(Header))+(BASE64(Payload)) + 암호화키)
+
+
+JWT의 특징은 내부 정보를 단순 BASE64 방식으로 인코딩하기 때문에 외부에서 쉽게 디코딩 할 수 있다.  
+외부에서 열람해도 되는 정보를 담아야하며, 토큰 자체의 발급처를 확인하기 위해서 사용한다.  
+(지폐와 같이 외부에서 그 금액을 확인하고 금방 외형을 따라서 만들 수 있지만 발급처에 대한 보장 및 검증은 확실하게 해야하는 경우에 사용한다. 따라서 토큰 내부에 비밀번호와 같은 값 입력 금지)  
+
+## JWT 암호화 방식
+
+* 암호화 종류
+	* 양방향
+		* 대칭키 - 이 프로젝트는 양방향 대칭키 방식 사용 : HS256
+		* 비대칭키
+	* 단방향
+
+## 암호화 키 저장
+
+암호화 키는 하드코딩 방식으로 구현 내부에 탑재하는 것을 지양하기 때문에 변수 설정 파일에 저장한다.  
+
+```
+spring.jwt.secret=vmfhaltmskdlstkfkdgodyroqkfwkdbalroqkfwkdbalaaaaaaaaaaaaaaaabbbbb
+```
+
+## JWTUtil
+
+* 토큰 Payload에 저장될 정보
+	* username
+	* role
+	* 생성일
+	* 만료일
+* JWTUtil 구현 메소드
+	* JWTUtil 생성자
+	* username 확인 메소드
+	* role 확인 메소드
+	* 만료일 확인 메소드
+
+* JWTUtil : 0.12.3
+```java
+@Component
+public class JWTUtil {
+
+    private SecretKey secretKey;
+
+    public JWTUtil(@Value("${spring.jwt.secret}")String secret) {
+
+
+        secretKey = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), Jwts.SIG.HS256.key().build().getAlgorithm());
+    }
+
+    public String getUsername(String token) {
+
+        return Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload().get("username", String.class);
+    }
+
+    public String getRole(String token) {
+
+        return Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload().get("role", String.class);
+    }
+
+    public Boolean isExpired(String token) {
+
+        return Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload().getExpiration().before(new Date());
+    }
+
+    public String createJwt(String username, String role, Long expiredMs) {
+
+        return Jwts.builder()
+                .claim("username", username)
+                .claim("role", role)
+                .issuedAt(new Date(System.currentTimeMillis()))
+                .expiration(new Date(System.currentTimeMillis() + expiredMs))
+                .signWith(secretKey)
+                .compact();
+    }
+}
+```
+정보 가저오는 방식 버전마다 좀 다름, 암호화키 사용법도 정해진방식 맞춰서 사용해줘야함  
+
+
+* JWTUtil : 0.11.5
+```java
+@Component
+public class JWTUtil {
+
+    private Key key;
+
+    public JWTUtil(@Value("${spring.jwt.secret}")String secret) {
+
+
+				byte[] byteSecretKey = Decoders.BASE64.decode(secret);
+        key = Keys.hmacShaKeyFor(byteSecretKey);
+    }
+
+    public String getUsername(String token) {
+
+        return Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody().get("username", String.class);
+    }
+
+    public String getRole(String token) {
+
+        return Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody().get("role", String.class);
+    }
+
+    public Boolean isExpired(String token) {
+
+        return Jwts.parserBuilder().setSigningKey(key).build().parseClaimsJws(token).getBody().getExpiration().before(new Date());
+    }
+
+    public String createJwt(String username, String role, Long expiredMs) {
+
+				Claims claims = Jwts.claims();
+        claims.put("username", username);
+        claims.put("role", role);
+
+        return Jwts.builder()
+                .setClaims(claims)
+                .setIssuedAt(new Date(System.currentTimeMillis()))
+                .setExpiration(new Date(System.currentTimeMillis() + expiredMs))
+                .signWith(key, SignatureAlgorithm.HS256)
+                .compact();
+    }
+}
+```
+
+## 참조
+https://www.youtube.com/watch?v=q4eTHvQAvRo&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=8  
+https://www.youtube.com/watch?v=obNHwsl0fXM&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=10  
+
+---
 # 20250113
 # 회원가입 로직구현, 로그인 필더 구현
 
