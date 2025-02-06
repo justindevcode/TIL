@@ -1,6 +1,361 @@
 # todo
 
 ---
+# 20250206
+# 로그인 성공시 JWT 발급, JWT 검증 필터
+
+## 로그인 성공
+로그인 로직, JWTUtil 클래스를 생성하였습니다. 이제 로그인이 성공 했을 경우 JWT를 발급하기 위한 구현을 진행하겠습니다.  
+
+## JWTUtil 주입
+
+* LoginFilter : JWTUtil 주입
+```java
+public class LoginFilter extends UsernamePasswordAuthenticationFilter {
+
+    private final AuthenticationManager authenticationManager;
+		//JWTUtil 주입
+		private final JWTUtil jwtUtil;
+
+    public LoginFilter(AuthenticationManager authenticationManager, JWTUtil jwtUtil) {
+
+        this.authenticationManager = authenticationManager;
+				this.jwtUtil = jwtUtil;
+    }
+
+    @Override
+    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+
+				//클라이언트 요청에서 username, password 추출
+        String username = obtainUsername(request);
+        String password = obtainPassword(request);
+
+				//스프링 시큐리티에서 username과 password를 검증하기 위해서는 token에 담아야 함
+        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(username, password, null);
+
+				//token에 담은 검증을 위한 AuthenticationManager로 전달
+        return authenticationManager.authenticate(authToken);
+    }
+
+		//로그인 성공시 실행하는 메소드 (여기서 JWT를 발급하면 됨)
+    @Override
+    protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication authentication) {
+
+    }
+
+		//로그인 실패시 실행하는 메소드
+    @Override
+    protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, AuthenticationException failed) {
+
+    }
+}
+```
+
+* SecurityConfig에서 Filter에 JWTUtil 주입
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+		private final AuthenticationConfiguration authenticationConfiguration;
+		//JWTUtil 주입
+		private final JWTUtil jwtUtil;
+
+    public SecurityConfig(AuthenticationConfiguration authenticationConfiguration, JWTUtil jwtUtil) {
+
+        this.authenticationConfiguration = authenticationConfiguration;
+				this.jwtUtil = jwtUtil;
+    }
+
+		@Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration configuration) throws Exception {
+
+        return configuration.getAuthenticationManager();
+    }
+
+    @Bean
+    public BCryptPasswordEncoder bCryptPasswordEncoder() {
+
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+
+        http
+                .csrf((auth) -> auth.disable());
+
+        http
+                .formLogin((auth) -> auth.disable());
+
+        http
+                .httpBasic((auth) -> auth.disable());
+
+        http
+                .authorizeHttpRequests((auth) -> auth
+                        .requestMatchers("/login", "/", "/join").permitAll()
+                        .anyRequest().authenticated());
+
+				//AuthenticationManager()와 JWTUtil 인수 전달
+        http
+                .addFilterAt(new LoginFilter(authenticationManager(authenticationConfiguration), jwtUtil), UsernamePasswordAuthenticationFilter.class);
+
+        http
+                .sessionManagement((session) -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+
+        return http.build();
+    }
+}
+```
+
+## LoginFilter 로그인 성공 successfulAuthentication 메소드 구현
+
+* LoginFilter
+```java
+public class LoginFilter extends UsernamePasswordAuthenticationFilter {
+
+    @Override
+    protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication authentication) {
+				
+				//UserDetailsS
+        CustomUserDetails customUserDetails = (CustomUserDetails) authentication.getPrincipal();
+
+        String username = customUserDetails.getUsername();
+
+        Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+        Iterator<? extends GrantedAuthority> iterator = authorities.iterator();
+        GrantedAuthority auth = iterator.next();
+
+        String role = auth.getAuthority();
+
+        String token = jwtUtil.createJwt(username, role, 60*60*10L);
+
+        response.addHeader("Authorization", "Bearer " + token);
+    }
+}
+
+```
+
+HTTP 인증 방식은 RFC 7235 정의에 따라 아래 인증 헤더 형태를 가져야 한다.
+```
+Authorization: 타입 인증토큰
+
+//예시
+Authorization: Bearer 인증토큰string
+```
+
+## LoginFilter 로그인 실패 unsuccessfulAuthentication 메소드 구현
+* LoginFilter
+```java
+public class LoginFilter extends UsernamePasswordAuthenticationFilter {
+
+    private final AuthenticationManager authenticationManager;
+    private final JWTUtil jwtUtil;
+
+    public LoginFilter(AuthenticationManager authenticationManager, JWTUtil jwtUtil) {
+
+        this.authenticationManager = authenticationManager;
+        this.jwtUtil = jwtUtil;
+    }
+
+    @Override
+    protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, AuthenticationException failed) {
+				
+				//로그인 실패시 401 응답 코드 반환
+        response.setStatus(401);
+    }
+}
+```
+
+## 발급 테스트
+/login 경로로 username과 password를 포함한 POST 요청을 보낸 후 응답 헤더에서 Authorization 키에 담긴 JWT를 확인한다.  
+
+* 요청 : POST /login : 아이디 비번 입력
+* 응답 : return 헤더에 'Authorization' 키값으로 Bearer ~~~ 형식으로 리턴
+
+## LoginFilter 최종
+```java
+public class LoginFilter extends UsernamePasswordAuthenticationFilter {
+
+    private final AuthenticationManager authenticationManager;
+    private final JWTUtil jwtUtil;
+
+    public LoginFilter(AuthenticationManager authenticationManager, JWTUtil jwtUtil) {
+
+        this.authenticationManager = authenticationManager;
+        this.jwtUtil = jwtUtil;
+    }
+
+    @Override
+    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+
+        String username = obtainUsername(request);
+        String password = obtainPassword(request);
+
+        UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(username, password, null);
+
+        return authenticationManager.authenticate(authToken);
+    }
+
+    @Override
+    protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication authentication) {
+
+        CustomUserDetails customUserDetails = (CustomUserDetails) authentication.getPrincipal();
+
+        String username = customUserDetails.getUsername();
+
+        Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+        Iterator<? extends GrantedAuthority> iterator = authorities.iterator();
+        GrantedAuthority auth = iterator.next();
+
+        String role = auth.getAuthority();
+
+        String token = jwtUtil.createJwt(username, role, 60*60*10L);
+
+        response.addHeader("Authorization", "Bearer " + token);
+    }
+
+    @Override
+    protected void unsuccessfulAuthentication(HttpServletRequest request, HttpServletResponse response, AuthenticationException failed) {
+
+        response.setStatus(401);
+    }
+}
+```
+
+## JWT 검증 필터
+스프링 시큐리티 filter chain에 요청에 담긴 JWT를 검증하기 위한 커스텀 필터를 등록해야 한다.  
+해당 필터를 통해 요청 헤더 Authorization 키에 JWT가 존재하는 경우 JWT를 검증하고 강제로SecurityContextHolder에 세션을 생성한다. (이 세션은 STATLESS 상태로 관리되기 때문에 해당 요청이 끝나면 소멸 된다.)  
+
+## JWTFilter 구현
+* JWTFilter
+```java
+public class JWTFilter extends OncePerRequestFilter {
+
+    private final JWTUtil jwtUtil;
+
+    public JWTFilter(JWTUtil jwtUtil) {
+
+        this.jwtUtil = jwtUtil;
+    }
+
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+				
+				//request에서 Authorization 헤더를 찾음
+        String authorization= request.getHeader("Authorization");
+				
+				//Authorization 헤더 검증
+        if (authorization == null || !authorization.startsWith("Bearer ")) {
+
+            System.out.println("token null");
+            filterChain.doFilter(request, response);
+						
+						//조건이 해당되면 메소드 종료 (필수)
+            return;
+        }
+			
+        System.out.println("authorization now");
+				//Bearer 부분 제거 후 순수 토큰만 획득
+        String token = authorization.split(" ")[1];
+			
+				//토큰 소멸 시간 검증
+        if (jwtUtil.isExpired(token)) {
+
+            System.out.println("token expired");
+            filterChain.doFilter(request, response);
+
+						//조건이 해당되면 메소드 종료 (필수)
+            return;
+        }
+
+				//토큰에서 username과 role 획득
+        String username = jwtUtil.getUsername(token);
+        String role = jwtUtil.getRole(token);
+				
+				//userEntity를 생성하여 값 set
+        UserEntity userEntity = new UserEntity();
+        userEntity.setUsername(username);
+        userEntity.setPassword("temppassword");
+        userEntity.setRole(role);
+				
+				//UserDetails에 회원 정보 객체 담기
+        CustomUserDetails customUserDetails = new CustomUserDetails(userEntity);
+
+				//스프링 시큐리티 인증 토큰 생성
+        Authentication authToken = new UsernamePasswordAuthenticationToken(customUserDetails, null, customUserDetails.getAuthorities());
+				//세션에 사용자 등록
+        SecurityContextHolder.getContext().setAuthentication(authToken);
+
+        filterChain.doFilter(request, response);
+    }
+}
+```
+
+## SecurityConfig JWTFilter 등록
+* SecurityConfig
+```java
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    private final AuthenticationConfiguration authenticationConfiguration;
+    private final JWTUtil jwtUtil;
+
+    public SecurityConfig(AuthenticationConfiguration authenticationConfiguration, JWTUtil jwtUtil) {
+
+        this.authenticationConfiguration = authenticationConfiguration;
+        this.jwtUtil = jwtUtil;
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+
+
+        http
+                .csrf((auth) -> auth.disable());
+
+        http
+                .formLogin((auth) -> auth.disable());
+
+        http
+                .httpBasic((auth) -> auth.disable());
+
+        http
+                .authorizeHttpRequests((auth) -> auth
+                        .requestMatchers("/login", "/", "/join").permitAll()
+                        .anyRequest().authenticated());
+				
+				//JWTFilter 등록
+        http
+                .addFilterBefore(new JWTFilter(jwtUtil), LoginFilter.class);
+
+        http
+                .addFilterAt(new LoginFilter(authenticationManager(authenticationConfiguration), jwtUtil), UsernamePasswordAuthenticationFilter.class);
+
+        http
+                .sessionManagement((session) -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+
+        return http.build();
+    }
+}
+```
+
+## JWT 요청 인가 테스트
+요청 헤더에 JWT를 첨부하고 로그인이 권한이 필요한 페이지에 접근을 진행하겠습니다.  
+
+* 요청 : 헤더에 로그인시 받은 'Authorization' 키값으로 Bearer ~~~ 형식 사용해 요청
+* 응답 : 접속 성공
+
+## 참조
+https://www.youtube.com/watch?v=nH3A22izjY0&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=10  
+https://www.youtube.com/watch?v=7B6KHSZN3jY&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=12  
+
+---
 # 20250114
 # DB기반 로그인검증로직, JWT 발급 클레스
 
