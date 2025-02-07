@@ -1,6 +1,146 @@
 # todo
 
 ---
+# 20250207
+# JWT 임시세션, CORS 설정, JWT의 목표
+
+## JWTFilter를 통과한 뒤 세션 확인
+임시로 세션을 잠깐 만들기때문에 요청에 대해 세션에서 유저정보 꺼낼 수 있음  
+
+```java
+@Controller
+@ResponseBody
+public class MainController {
+
+    @GetMapping("/")
+    public String mainP() {
+
+        String name = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        return "Main Controller : "+name;
+    }
+}
+```
+
+## 세션 현재 사용자 아이디
+`SecurityContextHolder.getContext().getAuthentication().getName();`
+
+## 세션 현재 사용자 role
+```java
+Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+Iterator<? extends GrantedAuthority> iter = authorities.iterator();
+GrantedAuthority auth = iter.next();
+String role = auth.getAuthority();
+```
+
+## CORS 설정 자료
+https://docs.spring.io/spring-security/reference/servlet/integrations/cors.html  
+
+## CORS란
+https://ko.wikipedia.org/wiki/%EA%B5%90%EC%B0%A8_%EC%B6%9C%EC%B2%98_%EB%A6%AC%EC%86%8C%EC%8A%A4_%EA%B3%B5%EC%9C%A0  
+
+## 발생 원리
+![1](https://github.com/user-attachments/assets/0e3b479f-ebb6-4ecc-a8df-78d190bd05ad)  
+
+## CORS 설정
+
+* SecurityConfig
+```java
+@Bean
+public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+		
+		http
+            .cors((corsCustomizer -> corsCustomizer.configurationSource(new CorsConfigurationSource() {
+
+                @Override
+                public CorsConfiguration getCorsConfiguration(HttpServletRequest request) {
+
+                    CorsConfiguration configuration = new CorsConfiguration();
+
+                    configuration.setAllowedOrigins(Collections.singletonList("http://localhost:3000"));
+                    configuration.setAllowedMethods(Collections.singletonList("*"));
+                    configuration.setAllowCredentials(true);
+                    configuration.setAllowedHeaders(Collections.singletonList("*"));
+                    configuration.setMaxAge(3600L);
+
+										configuration.setExposedHeaders(Collections.singletonList("Authorization"));
+
+                    return configuration;
+                }
+            })));
+
+    return http.build();
+}
+```
+
+* config>CorsMvcConfig
+```java
+@Configuration
+public class CorsMvcConfig implements WebMvcConfigurer {
+    
+    @Override
+    public void addCorsMappings(CorsRegistry corsRegistry) {
+        
+        corsRegistry.addMapping("/**")
+                .allowedOrigins("http://localhost:3000");
+    }
+}
+```
+
+## JWT를 깊게 생각하며 (강의자분이 생각하신 이유 메모한것)
+
+JWT 공부를 시작했을 때 JWT를 왜 사용하는지를 잊어버려 한동안 고민에 잠겼고 결론을 찾아 헤매었던 적이 있습니다. 그 고민의 흐름과 주관적인 결론을 남깁니다.  
+
+* JWT의 STATELESS 상태에 대한 집착
+시큐리티 JWT config를 구성하며 STATELESS 상태에 초점이 맞추어졌습니다.  
+(JWT 구현을 위해 STATELESS 상태가 필요하지만 STATELESS에 집착해야 하는건 아닙니다. 따라서 여기서 포인트 자체를 놓쳤습니다. 아무튼 이 과정을 작성하며 STATELESS 상태에 광적으로 집착을 하였습니다.)  
+
+* 토큰 탈취의 문제 - Refresh 토큰의 도입과 Refresh 토큰도 동일한 상황
+이때 부터 의문 사항이 생기게 되는 시발점입니다. JWT 자체가 세션 대비 토큰을 탈취 당했을때의 위험성이 큽니다.  
+따라서 Refresh, Access라는 2가지의 토큰을 발급해주는데 Refresh 토큰 요청 주기 자체가 길기 때문에 탈취 당할 확률은 낮지만 탈취 당할 수 있다 입니다.  
+이제 이 문제에 대한 여러 상황이 발생합니다.  
+
+* 토큰이 탈취 되었을때 서버의 제어권과 로그아웃 문제 등등
+토큰이 탈취되면 만료 기간 까지 서버측은 고통을 받습니다. 따라서 서버 비밀키를 변경하는 상황까지 도달하게 됩니다.  
+프론트 서버측 로그아웃을 구현하여도 이미 토큰을 복제 했다면 계속 서버에 접속할 수 있기 때문에 여전히 문제가 있습니다.  
+이를 위해 서버측 Redis와 같은 저장소에 발급한 Refresh 토큰을 저장한다는 구현들이 많았습니다. 그래서 로그아웃 상태거나 탈취된 토큰은 Redis 서버에서 제거하여 앞으로 Access 토큰 재발급이 불가능하도록 설정하는 것이었습니다.
+
+* 깊은 고민의 발생 - 모순?
+Refresh들을 저장하기 위한 Redis를 도입해버리면 사실상 세션 클러스터링을 작업하고 세션 방식을 사용하는 것이 좋지 않을까? STATELESS 작업을 했지만 다른 곳에서 상태 저장이 생겨버리네? (사실 엄밀하게는 아니지만 비슷한 맥락으로)  
+아무튼 여기까지해서 많은 고민을 했고 탈취를 막으면서도 Redis를 도입하지 않을 방법에 대해서 한가지 방법을 떠올렸습니다.  
+
+* IP 검증을 해보자 - 실패
+처음 로그인이 요청된 IP를 JWT에 담아 매번 요청이 올때마다 JWT의 IP와 요청 IP가 동일한지 검증을 진행하는 방법을 구상했는데 사용자들의 단말기는 IP값이 동적으로 자주 변경되기 때문에 문제가 되어 실패했습니다.  
+
+그래서 고민의 굴레에 빠졌습니다.  
+STATELESS → 그런데 Redis → 그럼 차라리 세션 → 왜 JWT를 사용했지?  
+
+## JWT를 왜 사용하는가?
+* 독일의 철학자 한나 아렌트의 “만드는 사람과 만드는 동물” → 나는 만드는 동물인가?
+위와 같이 꼬리에 꼬리를 무는 고민에 해답은 목표가 무엇인지 판단하는 것이었다.  
+한나 아렌트에 의하면 인간은 어떤 일에 몰두하는 존재지만 동시에 판단하는 존재인 “만드는 사람”이다. 우리가 JWT의 목적을 확인하지 않고 구현에만 열중한다면 무엇을 하는지도 모르는 “만드는 동물”에 불과하다. 따라서 JWT의 STATELESS한 상태에만 목적을 두는 것이 아닌 JWT가 왜 필요한지를 생각했고 해답을 찾았다.
+
+## JWT를 사용한 이유
+* 모바일 앱
+JWT가 사용된 주 이유는 결국 모바일 앱의 등장입니다. 모바일 앱의 특성상 주로 JWT 방식으로 인증/인가를 진행합니다. 결국 STATLESS는 부수적인 효과였습니다.  
+
+* 모바일 앱에서의 로그아웃
+모바일 앱에서는 JWT 탈취 우려가 거의 없기 때문에 앱단에서 로그아웃을 진행하여 JWT 자체를 제거해버리면 서버측에선 추가 조치도 필요가 없습니다. (토큰 자체가 확실하게 없어졌다는 보장이 되기 때문에)  
+
+* 장시간 로그인과 세션
+장기간 동안 로그인 상태를 유지하려고 세션 설정을 하면 서버 측 부하가 많이 가기 때문에 JWT 방식을 이용하는 것도 한 방법입니다.
+
+## API 서버에서 Refresh 토큰을 저장하여 어느 정도의 상태(STATE)를 만드는 이유
+이제는 상태를 남기는것에 대해서 큰 고민은 없어졌습니다. JWT의 목적이 STATELESS가 아니기 때문이니까요.  
+
+## 참조
+https://www.youtube.com/watch?v=Y1p6bVrRExs&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=12  
+https://www.youtube.com/watch?v=MGkYFwdabeM&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=14  
+https://www.youtube.com/watch?v=qIG-GNorXG4&list=PLJkjrxxiBSFCcOjy0AAVGNtIa08VLk1EJ&index=15  
+
+---
 # 20250206
 # 로그인 성공시 JWT 발급, JWT 검증 필터
 
